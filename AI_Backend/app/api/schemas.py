@@ -171,11 +171,34 @@ class UserRegisterRequest(BaseModel):
     password: str = Field(..., min_length=6, description="User password (min 6 characters)")
     display_name: Optional[str] = Field(default=None, description="Optional public display name")
 
+    @field_validator("email")
+    @classmethod
+    def validate_email_format(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v or "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("Invalid email address format.")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_length(cls, v: str) -> str:
+        if not v or len(v.strip()) < 6:
+            raise ValueError("Password must be at least 6 characters long.")
+        return v
+
 
 class UserLoginRequest(BaseModel):
     """Request schema for user login."""
     email: str = Field(..., description="User email address")
-    password: str = Field(..., description="User password")
+    password: str = Field(..., min_length=1, description="User password")
+
+    @field_validator("email")
+    @classmethod
+    def validate_email_format(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v or "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("Invalid email address format.")
+        return v
 
 
 class AuthResponse(BaseModel):
@@ -186,6 +209,8 @@ class AuthResponse(BaseModel):
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
     expires_at: Optional[int] = None
+    confirmation_required: bool = False
+    message: Optional[str] = None
 
 
 class UserSessionResponse(BaseModel):

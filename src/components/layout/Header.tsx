@@ -2,9 +2,10 @@
 // Top Header Component
 // ============================================================
 
-import { useLocation } from 'react-router-dom';
-import { Menu, Bell, HelpCircle } from 'lucide-react';
+import { useLocation, Link, useNavigate } from 'react-router-dom';
+import { Menu, Bell, HelpCircle, LogOut, LogIn } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
+import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 
 const PAGE_METADATA: Record<string, { title: string; description: string }> = {
@@ -28,12 +29,14 @@ const PAGE_METADATA: Record<string, { title: string; description: string }> = {
     title: 'Brand Knowledge',
     description: 'Manage your brand guidelines and terminology',
   },
+  '/login': {
+    title: 'Sign In',
+    description: 'Access your account',
+  },
 };
 
 function getPageMeta(pathname: string) {
-  // Exact match first
   if (PAGE_METADATA[pathname]) return PAGE_METADATA[pathname];
-  // Prefix match
   for (const [path, meta] of Object.entries(PAGE_METADATA)) {
     if (path !== '/' && pathname.startsWith(path)) return meta;
   }
@@ -45,9 +48,27 @@ interface HeaderProps {
 }
 
 export function Header({ onMobileMenuOpen }: HeaderProps) {
-  const { sidebarCollapsed } = useApp();
+  const { sidebarCollapsed, addToast } = useApp();
+  const { user, isAuthenticated, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const meta = getPageMeta(location.pathname);
+
+  const handleLogout = async () => {
+    await logout();
+    addToast({
+      title: 'Signed out',
+      description: 'You have been signed out successfully.',
+      variant: 'info',
+    });
+    navigate('/login');
+  };
+
+  const userInitial = user?.displayName
+    ? user.displayName.charAt(0).toUpperCase()
+    : user?.email
+    ? user.email.charAt(0).toUpperCase()
+    : 'U';
 
   return (
     <header
@@ -79,33 +100,62 @@ export function Header({ onMobileMenuOpen }: HeaderProps) {
         </div>
       </div>
 
-      {/* Right: utility actions */}
-      <div className="flex items-center gap-1 shrink-0">
+      {/* Right: utility actions and user account */}
+      <div className="flex items-center gap-2 shrink-0">
         <button
-          className="btn-ghost p-2 relative"
+          className="btn-ghost p-2 relative hidden sm:inline-flex"
           aria-label="Notifications"
           title="Notifications"
         >
           <Bell className="w-4.5 h-4.5 text-surface-500" />
         </button>
         <button
-          className="btn-ghost p-2"
+          className="btn-ghost p-2 hidden sm:inline-flex"
           aria-label="Help"
           title="Help"
         >
           <HelpCircle className="w-4.5 h-4.5 text-surface-500" />
         </button>
 
-        {/* Simple user avatar placeholder */}
-        <div
-          className="w-7 h-7 rounded-full bg-navy-600 flex items-center justify-center ml-1 cursor-pointer"
-          aria-label="User account"
-          title="User account"
-          role="button"
-          tabIndex={0}
-        >
-          <span className="text-xs font-semibold text-white">B</span>
-        </div>
+        {isAuthenticated && user ? (
+          <div className="flex items-center gap-2 pl-2 border-l border-surface-200">
+            {/* User display */}
+            <div className="flex items-center gap-2">
+              <div
+                className="w-7 h-7 rounded-full bg-brand-600 flex items-center justify-center text-white text-xs font-semibold shadow-xs"
+                title={user.email}
+              >
+                {userInitial}
+              </div>
+              <div className="hidden md:block text-left">
+                <p className="text-xs font-medium text-surface-800 leading-none truncate max-w-[120px]">
+                  {user.displayName || user.email.split('@')[0]}
+                </p>
+                <p className="text-[10px] text-surface-400 leading-none truncate max-w-[120px] mt-0.5">
+                  {user.email}
+                </p>
+              </div>
+            </div>
+
+            {/* Logout button */}
+            <button
+              onClick={handleLogout}
+              className="btn-ghost p-1.5 text-surface-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors ml-1"
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <Link
+            to="/login"
+            className="btn-primary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>Sign In</span>
+          </Link>
+        )}
       </div>
     </header>
   );

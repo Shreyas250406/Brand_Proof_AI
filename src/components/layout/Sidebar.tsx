@@ -2,7 +2,7 @@
 // Application Sidebar Navigation
 // ============================================================
 
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, Link, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   FileScan,
@@ -12,9 +12,11 @@ import {
   ChevronRight,
   Shield,
   X,
+  LogOut,
+  LogIn,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
-import { DemoBanner } from '@/components/ui/DemoBanner';
+import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -54,13 +56,31 @@ interface SidebarProps {
 }
 
 export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
-  const { sidebarCollapsed, setSidebarCollapsed } = useApp();
+  const { sidebarCollapsed, setSidebarCollapsed, addToast } = useApp();
+  const { user, isAuthenticated, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    addToast({
+      title: 'Signed out',
+      description: 'You have been signed out successfully.',
+      variant: 'info',
+    });
+    navigate('/login');
+  };
 
   const isActive = (item: NavItem) => {
     if (item.exact) return location.pathname === item.to;
     return location.pathname.startsWith(item.to);
   };
+
+  const userInitial = user?.displayName
+    ? user.displayName.charAt(0).toUpperCase()
+    : user?.email
+    ? user.email.charAt(0).toUpperCase()
+    : 'U';
 
   return (
     <>
@@ -77,9 +97,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       <aside
         className={cn(
           'fixed inset-y-0 left-0 z-40 flex flex-col bg-navy-900 transition-all duration-200 ease-in-out',
-          // Desktop: always visible, width toggles
           sidebarCollapsed ? 'lg:w-16' : 'lg:w-60',
-          // Mobile: slide in/out
           mobileOpen ? 'translate-x-0 w-60' : '-translate-x-full lg:translate-x-0'
         )}
         aria-label="Primary navigation"
@@ -142,12 +160,50 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           })}
         </nav>
 
-        {/* Demo indicator */}
-        <div className={cn(
-          'px-3 pb-3',
-          sidebarCollapsed && 'lg:hidden'
-        )}>
-          <DemoBanner />
+        {/* User Account / Sign In section */}
+        <div className={cn('p-3 border-t border-navy-800 shrink-0')}>
+          {isAuthenticated && user ? (
+            <div className={cn('flex items-center gap-2.5', sidebarCollapsed && 'lg:justify-center')}>
+              <div
+                className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs"
+                title={user.email}
+              >
+                {userInitial}
+              </div>
+              <div className={cn('flex-1 min-w-0', sidebarCollapsed && 'lg:hidden')}>
+                <p className="text-xs font-semibold text-white truncate">
+                  {user.displayName || user.email.split('@')[0]}
+                </p>
+                <p className="text-[11px] text-navy-400 truncate">
+                  {user.email}
+                </p>
+              </div>
+              <button
+                onClick={handleLogout}
+                className={cn(
+                  'text-navy-400 hover:text-red-400 p-1.5 rounded-md hover:bg-navy-800 transition-colors',
+                  sidebarCollapsed && 'lg:hidden'
+                )}
+                title="Sign out"
+                aria-label="Sign out"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <Link
+              to="/login"
+              className={cn(
+                'flex items-center gap-2.5 w-full py-2 px-3 rounded-lg text-xs font-medium bg-brand-600 hover:bg-brand-500 text-white transition-colors',
+                sidebarCollapsed && 'lg:justify-center lg:px-2'
+              )}
+            >
+              <LogIn className="w-4 h-4 shrink-0" />
+              <span className={cn('truncate', sidebarCollapsed && 'lg:hidden')}>
+                Sign In
+              </span>
+            </Link>
+          )}
         </div>
 
         {/* Collapse toggle (desktop only) */}

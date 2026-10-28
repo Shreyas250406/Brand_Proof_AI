@@ -151,11 +151,14 @@ export interface BrandProfile {
 export interface AnalysisRequest {
   content: string;
   sourceType: SourceType;
+  file?: File;
   fileName?: string;
   contentType?: string;
   targetAudience?: string;
   language?: string;
   writingInstructions?: string;
+  specialInstructions?: string;
+  brandGuidelines?: string;
   brandProfile?: BrandProfile;
 }
 

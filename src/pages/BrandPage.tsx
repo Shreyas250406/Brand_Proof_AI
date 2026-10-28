@@ -149,14 +149,12 @@ export function BrandPage() {
         </div>
       </div>
 
-      {/* Demo notice */}
-      <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-lg bg-amber-50 border border-amber-200">
-        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-        <p className="text-xs text-amber-800">
-          <span className="font-semibold">Demo configuration.</span>{' '}
-          These guidelines are saved locally in your browser for demo purposes.
-          They will be passed to the analysis engine once the backend is connected.
-          Editing them does not currently affect demo analysis results.
+      {/* Brand guidelines info */}
+      <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-lg bg-brand-50 border border-brand-200">
+        <BookOpen className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+        <p className="text-xs text-brand-800">
+          <span className="font-semibold">Brand Guidelines.</span>{' '}
+          Configure your brand voice, tone, and prohibited terms to maintain consistent communication across all analyses.
         </p>
       </div>
 

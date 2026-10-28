@@ -450,9 +450,11 @@ export const demoBrandService: IBrandService = {
 // Service registry — switch between demo and live adapters
 // -----------------------------------------------------------
 
-export const IS_DEMO_MODE = true; // Switch to false for live backend
+import { liveAnalysisService, liveHistoryService } from './live';
 
-export const analysisService: IAnalysisService = demoAnalysisService;
-export const historyService: IHistoryService = demoHistoryService;
+export const IS_DEMO_MODE = false; // Live AI & Supabase Database Mode
+
+export const analysisService: IAnalysisService = liveAnalysisService;
+export const historyService: IHistoryService = liveHistoryService;
 export const feedbackService: IFeedbackService = demoFeedbackService;
 export const brandService: IBrandService = demoBrandService;

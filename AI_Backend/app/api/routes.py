@@ -136,14 +136,15 @@ async def register(request: UserRegisterRequest) -> AuthResponse:
         )
     try:
         res = await supabase_service.register_user(
-            email=request.email,
+            email=request.email.strip(),
             password=request.password,
-            display_name=request.display_name,
+            display_name=request.display_name.strip() if request.display_name else None,
         )
         return AuthResponse(**res)
     except AuthenticationError as exc:
+        status_code = status.HTTP_409_CONFLICT if "already exists" in exc.message.lower() else status.HTTP_400_BAD_REQUEST
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status_code,
             detail={"error_type": "AuthenticationError", "message": exc.message},
         )
     except Exception as exc:
@@ -168,7 +169,7 @@ async def login(request: UserLoginRequest) -> AuthResponse:
         )
     try:
         res = await supabase_service.login_user(
-            email=request.email,
+            email=request.email.strip(),
             password=request.password,
         )
         return AuthResponse(**res)

@@ -125,7 +125,7 @@ export function AnalysePage() {
       return { content: `[File: ${file.name}] Document content analysis requires backend integration. This demo records the file upload and demonstrates the workflow.`, sourceType: ext === 'pdf' ? 'file_pdf' : 'file_word', valid: true, error: null };
     }
     if (isSupportedImageFile(file.name)) {
-      return { content: `[File: ${file.name}] Image OCR analysis requires backend integration.`, sourceType: 'file_image', valid: true, error: null };
+      return { content: file.name, sourceType: 'file_image', valid: true, error: null };
     }
     if (isSupportedVideoFile(file.name)) {
       return { content: `[File: ${file.name}] Video transcription analysis requires backend integration.`, sourceType: 'file_video', valid: true, error: null };
@@ -209,6 +209,7 @@ export function AnalysePage() {
         content,
         sourceType,
         fileName: file?.name,
+        file: file || undefined,
         contentType: contentType || undefined,
         targetAudience: targetAudience || undefined,
         language: language || undefined,
@@ -297,7 +298,7 @@ export function AnalysePage() {
             <div className="relative">
               <textarea
                 className="textarea-field min-h-[280px] font-mono text-sm leading-relaxed"
-                placeholder="Paste or type your content here…&#10;&#10;Tip: Try including phrases like 'alot', 'recieve', 'in order to' or 'utilize' to see demo findings."
+                placeholder="Paste or type your content here…&#10;&#10;Enter marketing copy, blog posts, product documentation, or any text to check for grammar, style, and brand alignment."
                 value={text}
                 onChange={e => {
                   setText(e.target.value);
@@ -330,7 +331,7 @@ export function AnalysePage() {
                   onClick={() => setText(SAMPLE_TEXT)}
                   className="text-xs text-brand-600 hover:text-brand-700 font-medium underline underline-offset-2"
                 >
-                  Load sample text for demo
+                  Load sample text
                 </button>
                 <span className="text-xs text-surface-400">— includes common issues to trigger findings</span>
               </div>
@@ -556,8 +557,8 @@ export function AnalysePage() {
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-brand-50 border border-brand-200">
           <Loader2 className="w-4 h-4 text-brand-600 animate-spin shrink-0" />
           <div>
-            <p className="text-sm font-medium text-brand-800">Running demo analysis…</p>
-            <p className="text-xs text-brand-600">Checking language quality and brand alignment patterns.</p>
+            <p className="text-sm font-medium text-brand-800">Analyzing content with BrandProof AI…</p>
+            <p className="text-xs text-brand-600">Checking language quality, grammar, and brand alignment.</p>
           </div>
         </div>
       )}

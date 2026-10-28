@@ -126,7 +126,7 @@ export function HistoryPage() {
             className="btn-ghost text-sm text-red-600 hover:text-red-700 hover:bg-red-50"
           >
             <RotateCcw className="w-4 h-4" />
-            Clear Demo Data
+            Clear History
           </button>
         )}
       </div>
@@ -301,8 +301,8 @@ export function HistoryPage() {
       <ConfirmDialog
         open={clearDialogOpen}
         onOpenChange={setClearDialogOpen}
-        title="Clear all demo data"
-        description="This will delete all analyses, feedback and brand settings from local demo storage. This cannot be undone."
+        title="Clear analysis history"
+        description="This will delete saved analysis history. This cannot be undone."
         confirmLabel="Clear Everything"
         cancelLabel="Cancel"
         variant="danger"
