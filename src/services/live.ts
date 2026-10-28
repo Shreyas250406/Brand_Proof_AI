@@ -17,7 +17,8 @@ import type {
 import { generateId } from '@/lib/utils';
 import { authService } from './auth';
 
-const API_BASE = '/api/v1/ai';
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const API_BASE = `${BASE_URL}/api/v1/ai`;
 
 function getAuthHeaders(): HeadersInit {
   const token = authService.getToken();

@@ -31,7 +31,8 @@ export const SUPABASE_CONFIG = {
   publishableKey: 'sb_publishable_ECnWMTxGBceW-cDUW4Z9fw_h_TvFJpe',
 };
 
-const API_BASE = '/api/v1/ai';
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const API_BASE = `${BASE_URL}/api/v1/ai`;
 
 export const authService = {
   getToken(): string | null {
