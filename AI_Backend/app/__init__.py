@@ -1,0 +1,1 @@
+"""BrandProof AI application package."""
