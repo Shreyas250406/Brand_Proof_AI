@@ -1,0 +1,9 @@
+[[requirement]]
+# Supabase configuration placeholder
+# This file is used by the Supabase CLI. Adjust values as needed for your local development.
+
+[project]
+name = "brandproof-ai"
+
+[api]
+# Add any API config here if needed.
