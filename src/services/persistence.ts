@@ -67,6 +67,7 @@ export const analysisStorage = {
     const current = this.list();
     const index = current.findIndex(a => a.id === analysis.id);
     if (index >= 0) {
+      // Keep edits in place so updating an analysis does not reorder history.
       current[index] = analysis;
     } else {
       current.unshift(analysis);

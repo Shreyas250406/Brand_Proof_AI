@@ -84,6 +84,7 @@ export function formatFileSize(bytes: number): string {
 }
 
 export function getFileExtension(filename: string): string {
+  // Normalize the final suffix so file-type checks are case-insensitive.
   return filename.split('.').pop()?.toLowerCase() ?? '';
 }
 
