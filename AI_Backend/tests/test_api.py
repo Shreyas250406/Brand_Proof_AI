@@ -1,7 +1,6 @@
 """Integration tests for BrandProof AI FastAPI endpoints."""
 
 from unittest.mock import AsyncMock, patch
-import pytest
 from fastapi.testclient import TestClient
 
 

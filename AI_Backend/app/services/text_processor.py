@@ -6,15 +6,11 @@ from app.api.schemas import (
     TextAnalysisRequest,
     TextAnalysisResponse,
     ImageAnalysisResponse,
-    ExtractTextResponse,
     OCRMetadata,
     AnalysisSummary,
 )
 from app.core.config import settings
-from app.core.exceptions import (
-    PayloadTooLargeError,
-    OCRProcessingError,
-)
+from app.core.exceptions import PayloadTooLargeError
 from app.services.grammar_analyzer import (
     GrammarAnalyzerService,
     grammar_analyzer_service,

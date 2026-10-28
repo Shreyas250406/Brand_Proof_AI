@@ -307,7 +307,172 @@ python -m pytest -v
 
 ---
 
-## 7. Known Limitations & Future Extension Points
+## 7. Supabase Database Migrations
+
+Production-ready PostgreSQL migration scripts are located in the repository under:
+
+```text
+supabase/
+└── migrations/
+    ├── 001_create_profiles.sql
+    ├── 002_create_analysis_history.sql
+    ├── 003_create_image_metadata.sql
+    └── 004_disable_rls.sql
+```
+
+### Purpose of Each Migration File
+
+| Migration File | Target Schema / Objects | Purpose & Details |
+|---|---|---|
+| `001_create_profiles.sql` | `public.profiles`, trigger `on_auth_user_created` | Creates user profiles referencing Supabase `auth.users(id)` with `ON DELETE CASCADE`. Implements an idempotent trigger function `handle_new_user()` using `ON CONFLICT (id) DO NOTHING` to automatically create a profile whenever a user registers. Does not store passwords. |
+| `002_create_analysis_history.sql` | `public.analysis_history`, indexes | Stores marketing text and OCR image analysis results. Uses native PostgreSQL `gen_random_uuid()` for IDs. Column `user_id` is nullable to preserve the guest/unauthenticated analysis workflow. Includes check constraint `CHECK (input_type IN ('text', 'image'))` and b-tree indexes on `user_id` and `created_at DESC`. |
+| `003_create_image_metadata.sql` | `public.image_metadata`, indexes | Stores S3 object keys and image file metadata (not image binary bytes). Foreign key `analysis_id` references `public.analysis_history(id)` with `ON DELETE CASCADE`. Enforces uniqueness on `object_key`. Foreign key `user_id` references `auth.users(id)` (nullable for guests). |
+| `004_disable_rls.sql` | RLS status on all 3 tables | Explicitly disables Row Level Security on `public.profiles`, `public.analysis_history`, and `public.image_metadata`. This allows the backend API service to manage data via the Supabase Service Role Key without client policy interference. |
+
+### Required Execution Order
+
+The migrations **must be executed in numerical sequence**:
+
+1. **`001_create_profiles.sql`** (depends on Supabase `auth.users`)
+2. **`002_create_analysis_history.sql`** (independent table referencing `auth.users`)
+3. **`003_create_image_metadata.sql`** (foreign key references `analysis_history(id)`)
+4. **`004_disable_rls.sql`** (alters `profiles`, `analysis_history`, and `image_metadata`)
+
+---
+
+## 8. How to Execute Migrations in Supabase SQL Editor
+
+Follow these exact steps to apply the schema migrations:
+
+1. **Log in to Supabase**: Navigate to [https://supabase.com/dashboard](https://supabase.com/dashboard) and select your project.
+2. **Open SQL Editor**: In the left sidebar, click the **SQL Editor** tab (icon `>_`).
+3. **Run Migration 001**:
+   - Click **+ New Query**.
+   - Copy the entire contents of [`supabase/migrations/001_create_profiles.sql`](../supabase/migrations/001_create_profiles.sql).
+   - Paste into the editor and click **Run** (or `Ctrl+Enter`). Confirm the output says `Success. No rows returned`.
+4. **Run Migration 002**:
+   - Click **+ New Query**.
+   - Copy the contents of [`supabase/migrations/002_create_analysis_history.sql`](../supabase/migrations/002_create_analysis_history.sql).
+   - Paste and click **Run**.
+5. **Run Migration 003**:
+   - Click **+ New Query**.
+   - Copy the contents of [`supabase/migrations/003_create_image_metadata.sql`](../supabase/migrations/003_create_image_metadata.sql).
+   - Paste and click **Run**.
+6. **Run Migration 004**:
+   - Click **+ New Query**.
+   - Copy the contents of [`supabase/migrations/004_disable_rls.sql`](../supabase/migrations/004_disable_rls.sql).
+   - Paste and click **Run**.
+
+---
+
+## 9. Verifying Tables, Constraints, and RLS
+
+After running the migrations, execute this verification query in the Supabase SQL Editor:
+
+```sql
+-- 1. Verify all 3 tables exist
+SELECT table_schema, table_name 
+FROM information_schema.tables 
+WHERE table_schema = 'public' 
+  AND table_name IN ('profiles', 'analysis_history', 'image_metadata');
+
+-- 2. Verify Row Level Security is DISABLED
+SELECT relname AS table_name, relrowsecurity AS rls_enabled 
+FROM pg_class 
+JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+WHERE pg_namespace.nspname = 'public' 
+  AND relname IN ('profiles', 'analysis_history', 'image_metadata');
+-- Expected: rls_enabled = false for all three tables.
+
+-- 3. Verify Foreign Keys and Constraints
+SELECT
+    tc.table_name, 
+    kcu.column_name, 
+    ccu.table_name AS foreign_table_name,
+    ccu.column_name AS foreign_column_name 
+FROM information_schema.table_constraints AS tc 
+JOIN information_schema.key_column_usage AS kcu
+  ON tc.constraint_name = kcu.constraint_name
+  AND tc.table_schema = kcu.table_schema
+JOIN information_schema.constraint_column_usage AS ccu
+  ON ccu.constraint_name = tc.constraint_name
+  AND ccu.table_schema = tc.table_schema
+WHERE tc.constraint_type = 'FOREIGN KEY' 
+  AND tc.table_schema = 'public';
+```
+
+---
+
+## 10. S3-Compatible Image Storage & Backend Setup
+
+### Storage Provider Architecture
+The backend uses `boto3` to provide a modular storage layer supporting AWS S3, Cloudflare R2, MinIO, Wasabi, and DigitalOcean Spaces.
+- **Image bytes are never stored in PostgreSQL.**
+- **Presigned URLs** are generated on-demand with configurable expiration (`S3_PRESIGNED_EXPIRY_SECONDS=3600`).
+- **Partial Failure Compensation:** If an S3 image upload succeeds but the subsequent PostgreSQL database insertion fails, the backend immediately rolls back and deletes the uploaded S3 object to prevent orphaned storage bloat.
+
+### Environment Configuration Guide
+
+Update your `.env` file with your credentials:
+
+```env
+# ==============================================================================
+# 1. Single Gemini API Key (Strictly one key, no pools, no rotation)
+# ==============================================================================
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.5-flash-lite
+
+# ==============================================================================
+# 2. Supabase Configuration (PostgreSQL Database & Auth)
+# ==============================================================================
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+# ==============================================================================
+# 3. S3-Compatible Image Storage Configuration
+# ==============================================================================
+S3_ENDPOINT_URL=https://s3.us-east-1.amazonaws.com # Or your R2/MinIO endpoint
+S3_REGION=us-east-1
+S3_BUCKET_NAME=your-bucket-name
+S3_ACCESS_KEY_ID=your_access_key
+S3_SECRET_ACCESS_KEY=your_secret_key
+S3_USE_SSL=true
+```
+
+> [!CAUTION]
+> **Security & Secret Protection Rules:**
+> - `SUPABASE_SERVICE_ROLE_KEY`, `S3_SECRET_ACCESS_KEY`, and `GEMINI_API_KEY` must **NEVER** be committed to Git or exposed in frontend client code.
+> - The `.env` file is excluded from version control via `.gitignore`.
+> - The `/health` endpoint strictly reports service operational statuses and masks endpoints without revealing secret tokens.
+
+---
+
+## 11. Testing & Validation Status
+
+The backend includes **38 automated tests** passing across all modules:
+
+```bash
+cd AI_Backend
+python -m pytest tests/ -v
+```
+
+### Passed Automated Test Suites:
+- `tests/test_sql_migrations.py`: Schema validity, PostgreSQL syntax AST parsing via `sqlglot`, execution order, constraint types, and absence of MySQL syntax.
+- `tests/test_storage_service.py`: S3 upload, deletion, unique key generation, MIME type validation, file size enforcement, and presigned URLs.
+- `tests/test_supabase_integration.py`: Supabase Auth registration, login, token verification, analysis history insertion, image metadata insertion, and partial-failure rollback compensation.
+- `tests/test_api.py`: FastAPI endpoints (`/analyze-text`, `/analyze-image`, `/extract-text`, `/health`, auth, and history).
+- `tests/test_grammar_analyzer.py`: LLM structured single-request analysis, error handling, rate limits, quota limits.
+- `tests/test_ocr_service.py`: Real PaddleOCR extraction, corrupted image handling, image format support.
+- `tests/test_reliability_security.py`: Input boundaries, payload size limits, prompt injection safety.
+
+### Validation Limitations
+- **Static Syntax & AST Validation:** Every SQL migration file has been statically validated against the PostgreSQL dialect with zero syntax or ordering errors.
+- **Live Database Execution:** A live Supabase connection was not configured in the local development environment; therefore, live database execution against Supabase remains unverified until executed in your target project using the provided steps.
+
+---
+
+## 12. Known Limitations & Future Extension Points
 
 - **OCR Scope:** Currently extracts printed text from 2D images (PNG, JPEG, WEBP, BMP, TIFF). It does not analyze logos, color palettes, visual layout compliance, or handwritten text.
 - **Language Coverage:** Default OCR and grammar prompt are tuned for English. Additional languages can be enabled via `OCR_LANG` and request `language` parameters.

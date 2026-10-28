@@ -1,6 +1,6 @@
 """Pydantic schemas for BrandProof AI Engine API."""
 
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -93,10 +93,12 @@ class AnalysisSummary(BaseModel):
 
 class TextAnalysisResponse(BaseModel):
     """Response schema for text grammar analysis."""
+    id: Optional[str] = None
     original_text: str
     findings: List[GrammarFinding]
     corrected_text: str
     summary: AnalysisSummary
+    created_at: Optional[str] = None
 
 
 class OCRMetadata(BaseModel):
@@ -115,13 +117,95 @@ class ExtractTextResponse(BaseModel):
     success: bool
 
 
+class ImageMetadataResponse(BaseModel):
+    """Metadata for uploaded images stored in S3-compatible storage."""
+    id: Optional[str] = None
+    analysis_id: Optional[str] = None
+    storage_provider: str = "s3"
+    bucket_name: str
+    object_key: str
+    original_filename: Optional[str] = None
+    content_type: str
+    file_size_bytes: Optional[int] = None
+    presigned_url: Optional[str] = None
+    created_at: Optional[str] = None
+
+
 class ImageAnalysisResponse(BaseModel):
     """Response schema for image OCR extraction plus grammar analysis."""
+    id: Optional[str] = None
     extracted_text: str
     ocr_metadata: OCRMetadata
     findings: List[GrammarFinding]
     corrected_text: str
     summary: AnalysisSummary
+    image_metadata: Optional[ImageMetadataResponse] = None
+    created_at: Optional[str] = None
+
+
+class AnalysisHistoryItem(BaseModel):
+    """Schema representing an item in analysis history."""
+    id: str
+    user_id: Optional[str] = None
+    input_type: str
+    original_text: str
+    corrected_text: str
+    findings: List[Dict[str, Any]] = Field(default_factory=list)
+    summary: Optional[str] = None
+    model_name: Optional[str] = None
+    created_at: str
+    image_metadata: Optional[ImageMetadataResponse] = None
+
+
+class HistoryListResponse(BaseModel):
+    """Response schema for listing analysis history."""
+    items: List[AnalysisHistoryItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class UserRegisterRequest(BaseModel):
+    """Request schema for Supabase user registration."""
+    email: str = Field(..., description="User email address")
+    password: str = Field(..., min_length=6, description="User password (min 6 characters)")
+    display_name: Optional[str] = Field(default=None, description="Optional public display name")
+
+
+class UserLoginRequest(BaseModel):
+    """Request schema for user login."""
+    email: str = Field(..., description="User email address")
+    password: str = Field(..., description="User password")
+
+
+class AuthResponse(BaseModel):
+    """Response schema for authentication operations."""
+    user_id: Optional[str] = None
+    email: str
+    display_name: Optional[str] = None
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    expires_at: Optional[int] = None
+
+
+class UserSessionResponse(BaseModel):
+    """Response schema for session verification."""
+    user_id: str
+    email: str
+    display_name: Optional[str] = None
+
+
+class DatabaseHealth(BaseModel):
+    """Health information for Supabase database."""
+    configured: bool
+    url: Optional[str] = None
+
+
+class StorageHealth(BaseModel):
+    """Health information for S3-compatible storage."""
+    configured: bool
+    bucket: Optional[str] = None
+    provider: str = "s3"
 
 
 class AIProviderHealth(BaseModel):
@@ -145,6 +229,8 @@ class HealthResponse(BaseModel):
     version: str
     ai_provider: AIProviderHealth
     ocr_service: OCRServiceHealth
+    database: Optional[DatabaseHealth] = None
+    storage: Optional[StorageHealth] = None
 
 
 class ErrorResponse(BaseModel):

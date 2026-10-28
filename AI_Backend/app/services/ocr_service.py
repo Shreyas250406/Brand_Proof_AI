@@ -4,6 +4,7 @@ import io
 import os
 import time
 import logging
+from importlib.util import find_spec
 from typing import Optional, Tuple, List
 from PIL import Image
 
@@ -67,11 +68,7 @@ class OCRService:
 
     def is_available(self) -> bool:
         """Determines whether the OCR engine is available."""
-        try:
-            import paddleocr  # noqa: F401
-            return True
-        except ImportError:
-            return False
+        return find_spec("paddleocr") is not None
 
     def validate_image_bytes(
         self,

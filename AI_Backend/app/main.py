@@ -7,7 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 
 from app.core.config import settings
-from app.core.exceptions import BrandProofAIException
+from app.core.exceptions import (
+    BrandProofAIException,
+    AuthenticationError,
+    DatabaseConfigError,
+    StorageConfigError,
+    StorageUploadError,
+    PayloadTooLargeError,
+    UnsupportedMediaError,
+)
 from app.api.routes import router as ai_router
 
 # Configure logging
@@ -59,9 +67,22 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(BrandProofAIException)
 async def brandproof_exception_handler(request: Request, exc: BrandProofAIException):
-    """Handles base domain exceptions."""
+    """Handles base domain exceptions with appropriate HTTP status codes."""
+    status_code = status.HTTP_400_BAD_REQUEST
+
+    if isinstance(exc, AuthenticationError):
+        status_code = status.HTTP_401_UNAUTHORIZED
+    elif isinstance(exc, (DatabaseConfigError, StorageConfigError)):
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    elif isinstance(exc, StorageUploadError):
+        status_code = status.HTTP_502_BAD_GATEWAY
+    elif isinstance(exc, PayloadTooLargeError):
+        status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+    elif isinstance(exc, UnsupportedMediaError):
+        status_code = status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
+
     return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
+        status_code=status_code,
         content={
             "error_type": type(exc).__name__,
             "message": exc.message,

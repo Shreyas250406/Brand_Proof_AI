@@ -1,7 +1,7 @@
 """Grammar and language analyzer service integrating LLM and structured schemas."""
 
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 from app.api.schemas import (
     GrammarFinding,
     AnalysisSummary,

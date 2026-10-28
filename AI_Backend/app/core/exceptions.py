@@ -59,3 +59,33 @@ class PayloadTooLargeError(BrandProofAIException):
 class UnsupportedMediaError(BrandProofAIException):
     """Raised when uploaded file mime type is not supported."""
     pass
+
+
+class StorageConfigError(BrandProofAIException):
+    """Raised when S3 storage configuration or credentials are missing."""
+    pass
+
+
+class StorageUploadError(BrandProofAIException):
+    """Raised when uploading an object to S3 storage fails."""
+    pass
+
+
+class StorageDeleteError(BrandProofAIException):
+    """Raised when deleting an object from S3 storage fails."""
+    pass
+
+
+class DatabaseConfigError(BrandProofAIException):
+    """Raised when Supabase or PostgreSQL configuration is missing."""
+    pass
+
+
+class DatabaseError(BrandProofAIException):
+    """Raised when a Supabase/PostgreSQL query or transaction fails."""
+    pass
+
+
+class AuthenticationError(BrandProofAIException):
+    """Raised when Supabase Auth registration, login, or session check fails."""
+    pass
