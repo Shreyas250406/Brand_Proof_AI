@@ -375,7 +375,13 @@ def accept_suggestion(
     suggestion_id: str,
 ) -> List[Dict[str, Any]]:
     """Marks the specified suggestion as accepted."""
-    raise NotImplementedError("accept_suggestion not yet implemented.")
+    if not isinstance(suggestions, list):
+        return []
+    for s in suggestions:
+        if isinstance(s, dict) and s.get("id") == suggestion_id:
+            s["status"] = "accepted"
+            break
+    return suggestions
 
 
 def reject_suggestion(
@@ -383,7 +389,13 @@ def reject_suggestion(
     suggestion_id: str,
 ) -> List[Dict[str, Any]]:
     """Marks the specified suggestion as rejected."""
-    raise NotImplementedError("reject_suggestion not yet implemented.")
+    if not isinstance(suggestions, list):
+        return []
+    for s in suggestions:
+        if isinstance(s, dict) and s.get("id") == suggestion_id:
+            s["status"] = "rejected"
+            break
+    return suggestions
 
 
 def edit_suggestion(
@@ -392,19 +404,33 @@ def edit_suggestion(
     edited_text: str,
 ) -> List[Dict[str, Any]]:
     """Modifies the suggested text of the specified suggestion."""
-    raise NotImplementedError("edit_suggestion not yet implemented.")
+    if not isinstance(suggestions, list):
+        return []
+    for s in suggestions:
+        if isinstance(s, dict) and s.get("id") == suggestion_id:
+            s["suggested_text"] = edited_text
+            s["is_edited"] = True
+            break
+    return suggestions
 
 
 def accept_all_suggestions(
     suggestions: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """Marks all currently pending suggestions as accepted."""
-    raise NotImplementedError("accept_all_suggestions not yet implemented.")
+    if not isinstance(suggestions, list):
+        return []
+    for s in suggestions:
+        if isinstance(s, dict) and s.get("status") == "pending":
+            s["status"] = "accepted"
+    return suggestions
 
 
 def restore_original(original_content: str) -> str:
     """Restores and returns the original content unmodified."""
-    raise NotImplementedError("restore_original not yet implemented.")
+    if original_content is None:
+        return ""
+    return str(original_content)
 
 
 def apply_accepted_suggestions(
