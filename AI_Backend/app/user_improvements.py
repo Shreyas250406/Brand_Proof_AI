@@ -731,3 +731,84 @@ def regenerate_improvements(
         "status": "success",
         "suggestions": validated_suggestions,
     }
+
+
+if __name__ == "__main__":
+    print("=" * 70)
+    print("BrandProof AI - Standalone User-Driven Content Improvements Module")
+    print("=" * 70)
+
+    sample_content = (
+        "Our product helps people to manage their work and make things better."
+    )
+    sample_instructions = "Make this content more professional, concise, and persuasive."
+    sample_context = {
+        "content_type": "Marketing Copy",
+        "target_audience": "Business Professionals",
+        "language": "English",
+        "brand_guidelines": ["Use active voice", "Be concise and clear"],
+        "preserved_entities": ["BrandProof AI"],
+    }
+
+    print("\n[1] Original Content:")
+    print(sample_content)
+
+    print("\n[2] User Instructions:")
+    print(sample_instructions)
+
+    cfg = get_gemini_config()
+    if cfg.get("api_key"):
+        print(f"\n[3] Generating suggestions using Gemini ({cfg.get('model')})...")
+        response = generate_improvements(
+            original_content=sample_content,
+            user_instructions=sample_instructions,
+            context=sample_context,
+        )
+    else:
+        print("\n[3] (GEMINI_API_KEY not configured, using demonstration suggestions)...")
+        response = {
+            "status": "success",
+            "suggestions": [
+                {
+                    "id": "suggestion_1",
+                    "original_text": "Our product helps people to manage their work",
+                    "suggested_text": "Our platform streamlines workflow management",
+                    "category": "Conciseness",
+                    "explanation": "The revised sentence is more concise and professional.",
+                    "status": "pending",
+                },
+                {
+                    "id": "suggestion_2",
+                    "original_text": "make things better",
+                    "suggested_text": "empower teams to achieve peak productivity",
+                    "category": "Persuasiveness",
+                    "explanation": "Action-oriented and business-focused phrasing.",
+                    "status": "pending",
+                },
+            ],
+        }
+
+    print("\nGenerated Suggestions:")
+    print(json.dumps(response, indent=2))
+    suggestions_list = response.get("suggestions", [])
+
+    if suggestions_list:
+        print(f"\n[4] Accepting suggestion 1 ({suggestions_list[0]['id']})...")
+        accept_suggestion(suggestions_list, suggestions_list[0]["id"])
+
+        if len(suggestions_list) > 1:
+            print(f"\n[5] Editing and accepting suggestion 2 ({suggestions_list[1]['id']})...")
+            edit_suggestion(
+                suggestions_list,
+                suggestions_list[1]["id"],
+                "drive measurable operational excellence",
+            )
+            accept_suggestion(suggestions_list, suggestions_list[1]["id"])
+
+        print("\n[6] Applying accepted suggestions...")
+        applied_result = apply_accepted_suggestions(sample_content, suggestions_list)
+        print(json.dumps(applied_result, indent=2))
+
+        print("\n[7] Final Transformed Copy:")
+        print(applied_result["final_content"])
+
