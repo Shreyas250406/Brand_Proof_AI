@@ -277,9 +277,97 @@ def generate_improvements(
     user_instructions: str,
     existing_findings: Optional[List[Dict[str, Any]]] = None,
     context: Optional[Dict[str, Any]] = None,
+    gemini_client: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Generates personalized improvement suggestions using Gemini."""
-    raise NotImplementedError("generate_improvements not yet implemented.")
+    """Generates personalized improvement suggestions using Gemini.
+
+    Validates inputs, constructs the prompt, invokes Gemini, validates the
+    structured output, and returns suggestions with 'pending' status.
+    """
+    if not isinstance(original_content, str) or not original_content.strip():
+        return {
+            "status": "error",
+            "message": "Original content cannot be empty.",
+            "suggestions": [],
+        }
+
+    if not isinstance(user_instructions, str) or not user_instructions.strip():
+        return {
+            "status": "error",
+            "message": "User instructions cannot be empty.",
+            "suggestions": [],
+        }
+
+    prompt = build_user_prompt(
+        original_content=original_content,
+        user_instructions=user_instructions,
+        existing_findings=existing_findings,
+        context=context,
+    )
+
+    caller = gemini_client or get_gemini_response
+
+    try:
+        raw_response = caller(prompt, DEFAULT_SYSTEM_PROMPT)
+    except Exception as exc:
+        return {
+            "status": "error",
+            "message": f"Gemini response error: {str(exc)}",
+            "suggestions": [],
+        }
+
+    # Handle if raw_response is string or non-dict
+    if isinstance(raw_response, str):
+        try:
+            raw_response = json.loads(_clean_json_response(raw_response))
+        except Exception as exc:
+            return {
+                "status": "error",
+                "message": f"Malformed JSON from Gemini: {str(exc)}",
+                "suggestions": [],
+            }
+
+    if isinstance(raw_response, list):
+        raw_suggestions = raw_response
+    elif isinstance(raw_response, dict):
+        raw_suggestions = raw_response.get("suggestions", [])
+        if not isinstance(raw_suggestions, list):
+            raw_suggestions = []
+    else:
+        return {
+            "status": "error",
+            "message": "Invalid response format received from Gemini.",
+            "suggestions": [],
+        }
+
+    validated_suggestions: List[Dict[str, Any]] = []
+    for idx, item in enumerate(raw_suggestions):
+        if not isinstance(item, dict):
+            continue
+
+        orig_text = str(item.get("original_text", "")).strip()
+        sugg_text = str(item.get("suggested_text", "")).strip()
+
+        if not orig_text or not sugg_text:
+            continue
+
+        sugg_id = str(item.get("id") or f"suggestion_{idx + 1}").strip()
+        category = str(item.get("category") or "Clarity").strip()
+        explanation = str(item.get("explanation") or "").strip()
+
+        validated_suggestions.append({
+            "id": sugg_id,
+            "original_text": orig_text,
+            "suggested_text": sugg_text,
+            "category": category,
+            "explanation": explanation,
+            "status": "pending",
+        })
+
+    return {
+        "status": "success",
+        "suggestions": validated_suggestions,
+    }
 
 
 def accept_suggestion(
