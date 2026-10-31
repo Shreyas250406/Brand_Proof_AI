@@ -615,6 +615,119 @@ def regenerate_improvements(
     previous_suggestions: Optional[List[Dict[str, Any]]] = None,
     existing_findings: Optional[List[Dict[str, Any]]] = None,
     context: Optional[Dict[str, Any]] = None,
+    gemini_client: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Generates a fresh batch of suggestions based on new instructions."""
-    raise NotImplementedError("regenerate_improvements not yet implemented.")
+    """Generates a fresh batch of suggestions based on new instructions.
+
+    Preserves previous suggestion records, incorporates context from prior suggestions
+    if provided, avoids ID collisions, and returns a new batch of pending suggestions.
+    """
+    if not isinstance(original_content, str) or not original_content.strip():
+        return {
+            "status": "error",
+            "message": "Original content cannot be empty.",
+            "suggestions": [],
+        }
+
+    if not isinstance(new_instructions, str) or not new_instructions.strip():
+        return {
+            "status": "error",
+            "message": "New instructions cannot be empty.",
+            "suggestions": [],
+        }
+
+    # Build prompt including previous suggestions context if available
+    ctx = context or {}
+    combined_context = dict(ctx)
+
+    prev_list = previous_suggestions or []
+    prompt = build_user_prompt(
+        original_content=original_content,
+        user_instructions=new_instructions,
+        existing_findings=existing_findings,
+        context=combined_context,
+    )
+
+    if prev_list:
+        prev_summary = []
+        for s in prev_list:
+            if isinstance(s, dict):
+                prev_summary.append({
+                    "id": s.get("id"),
+                    "original_text": s.get("original_text"),
+                    "suggested_text": s.get("suggested_text"),
+                    "status": s.get("status"),
+                })
+        prompt += "\n\n## PREVIOUS SUGGESTIONS (For context, do not duplicate or revert accepted changes):\n"
+        prompt += json.dumps(prev_summary, indent=2)
+
+    caller = gemini_client or get_gemini_response
+
+    try:
+        raw_response = caller(prompt, DEFAULT_SYSTEM_PROMPT)
+    except Exception as exc:
+        return {
+            "status": "error",
+            "message": f"Gemini response error during regeneration: {str(exc)}",
+            "suggestions": [],
+        }
+
+    if isinstance(raw_response, str):
+        try:
+            raw_response = json.loads(_clean_json_response(raw_response))
+        except Exception as exc:
+            return {
+                "status": "error",
+                "message": f"Malformed JSON from Gemini during regeneration: {str(exc)}",
+                "suggestions": [],
+            }
+
+    if isinstance(raw_response, list):
+        raw_suggestions = raw_response
+    elif isinstance(raw_response, dict):
+        raw_suggestions = raw_response.get("suggestions", [])
+        if not isinstance(raw_suggestions, list):
+            raw_suggestions = []
+    else:
+        return {
+            "status": "error",
+            "message": "Invalid response format received from Gemini during regeneration.",
+            "suggestions": [],
+        }
+
+    # Collect existing IDs to avoid any ID collisions
+    existing_ids = {str(s.get("id")) for s in prev_list if isinstance(s, dict)}
+
+    validated_suggestions: List[Dict[str, Any]] = []
+    for idx, item in enumerate(raw_suggestions):
+        if not isinstance(item, dict):
+            continue
+
+        orig_text = str(item.get("original_text", "")).strip()
+        sugg_text = str(item.get("suggested_text", "")).strip()
+
+        if not orig_text or not sugg_text:
+            continue
+
+        raw_id = str(item.get("id") or f"suggestion_regen_{idx + 1}").strip()
+        sugg_id = raw_id
+        # Ensure unique ID if colliding with previous batch
+        if sugg_id in existing_ids:
+            sugg_id = f"{raw_id}_regen_{idx + 1}"
+
+        category = str(item.get("category") or "Clarity").strip()
+        explanation = str(item.get("explanation") or "").strip()
+
+        validated_suggestions.append({
+            "id": sugg_id,
+            "original_text": orig_text,
+            "suggested_text": sugg_text,
+            "category": category,
+            "explanation": explanation,
+            "status": "pending",
+        })
+
+    return {
+        "status": "success",
+        "suggestions": validated_suggestions,
+    }
