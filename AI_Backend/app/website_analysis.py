@@ -5,6 +5,7 @@ the existing Gemini integration to analyze grammar, tone, brand consistency,
 readability, marketing quality, and SEO-related factors.
 """
 
+from html.parser import HTMLParser
 import ipaddress
 import json
 import logging
@@ -305,6 +306,287 @@ def fetch_website(
         except Exception:
             html_text = raw_bytes.decode("utf-8", errors="replace")
 
-        return True, html_text, current_url
+class WebsiteContentExtractor(HTMLParser):
+    """HTML Parser that extracts structured content, hierarchy, and metadata."""
 
-    return False, f"Exceeded maximum redirects limit of {max_redirects}.", current_url
+    IGNORE_TAGS = {"script", "style", "noscript", "svg", "canvas", "iframe"}
+
+    def __init__(self):
+        super().__init__()
+        self.title: str = ""
+        self.meta_description: str = ""
+        self.headings: List[Dict[str, str]] = []
+        self.paragraphs: List[str] = []
+        self.cta_text: List[str] = []
+        self.image_alt_texts: List[str] = []
+        self.lists: List[str] = []
+
+        # Current section tracking
+        self.sections: List[Dict[str, Any]] = []
+        self.current_section_heading = "Introduction"
+        self.current_section_level = "h1"
+        self.current_section_paragraphs: List[str] = []
+
+        # State tracking
+        self._in_ignore = 0
+        self._in_title = False
+        self._current_tag = ""
+        self._buffer: List[str] = []
+        self._current_attrs: Dict[str, str] = {}
+
+    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]):
+        attr_dict = {k.lower(): (v or "") for k, v in attrs}
+        tag_lower = tag.lower()
+        self._current_tag = tag_lower
+        self._current_attrs = attr_dict
+
+        if tag_lower in self.IGNORE_TAGS:
+            self._in_ignore += 1
+            return
+
+        if self._in_ignore > 0:
+            return
+
+        # Title
+        if tag_lower == "title":
+            self._in_title = True
+            self._buffer = []
+            return
+
+        # Meta description
+        if tag_lower == "meta":
+            name = attr_dict.get("name", "").lower()
+            prop = attr_dict.get("property", "").lower()
+            if name == "description" or prop in ("og:description", "twitter:description"):
+                content = attr_dict.get("content", "").strip()
+                if content and not self.meta_description:
+                    self.meta_description = content
+            return
+
+        # Image alt attributes
+        if tag_lower == "img":
+            alt = attr_dict.get("alt", "").strip()
+            if alt:
+                self.image_alt_texts.append(alt)
+            return
+
+        # Buttons or CTA links
+        if tag_lower == "button" or (tag_lower == "input" and attr_dict.get("type", "").lower() in ("button", "submit")):
+            val = attr_dict.get("value", "").strip()
+            if val:
+                self.cta_text.append(val)
+            self._buffer = []
+            return
+
+        if tag_lower == "a":
+            classes = attr_dict.get("class", "").lower()
+            rel = attr_dict.get("rel", "").lower()
+            is_cta = any(k in classes for k in ("btn", "button", "cta", "action"))
+            if is_cta:
+                self._buffer = []
+            return
+
+        # Headings (h1, h2, h3)
+        if tag_lower in ("h1", "h2", "h3"):
+            # Close previous section if it had content
+            if self.current_section_paragraphs:
+                self.sections.append({
+                    "heading": self.current_section_heading,
+                    "level": self.current_section_level,
+                    "content": " ".join(self.current_section_paragraphs),
+                })
+                self.current_section_paragraphs = []
+            self._buffer = []
+            return
+
+        # Paragraphs & list items
+        if tag_lower in ("p", "li"):
+            self._buffer = []
+            return
+
+    def handle_endtag(self, tag: str):
+        tag_lower = tag.lower()
+
+        if tag_lower in self.IGNORE_TAGS:
+            if self._in_ignore > 0:
+                self._in_ignore -= 1
+            return
+
+        if self._in_ignore > 0:
+            return
+
+        text = " ".join("".join(self._buffer).split()).strip()
+
+        if tag_lower == "title":
+            self._in_title = False
+            if text and not self.title:
+                self.title = text
+            self._buffer = []
+            return
+
+        if tag_lower in ("h1", "h2", "h3"):
+            if text:
+                self.headings.append({"level": tag_lower, "text": text})
+                self.current_section_heading = text
+                self.current_section_level = tag_lower
+            self._buffer = []
+            return
+
+        if tag_lower == "button":
+            if text and text not in self.cta_text:
+                self.cta_text.append(text)
+            self._buffer = []
+            return
+
+        if tag_lower == "a":
+            classes = self._current_attrs.get("class", "").lower()
+            if any(k in classes for k in ("btn", "button", "cta", "action")) and text:
+                if text not in self.cta_text:
+                    self.cta_text.append(text)
+            self._buffer = []
+            return
+
+        if tag_lower == "p":
+            if text:
+                self.paragraphs.append(text)
+                self.current_section_paragraphs.append(text)
+            self._buffer = []
+            return
+
+        if tag_lower == "li":
+            if text:
+                self.lists.append(text)
+                self.current_section_paragraphs.append(text)
+            self._buffer = []
+            return
+
+    def handle_data(self, data: str):
+        if self._in_ignore == 0:
+            self._buffer.append(data)
+
+    def finalize(self):
+        """Closes the final open section if any."""
+        if self.current_section_paragraphs:
+            self.sections.append({
+                "heading": self.current_section_heading,
+                "level": self.current_section_level,
+                "content": " ".join(self.current_section_paragraphs),
+            })
+            self.current_section_paragraphs = []
+
+
+def clean_extracted_content(content_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Cleans and deduplicates extracted content while preserving order."""
+    cleaned = dict(content_dict)
+
+    # Clean title and meta
+    cleaned["title"] = " ".join(str(content_dict.get("title", "")).split()).strip()
+    cleaned["meta_description"] = " ".join(str(content_dict.get("meta_description", "")).split()).strip()
+
+    # Deduplicate headings while preserving structure
+    seen_headings = set()
+    cleaned_headings = []
+    for h in content_dict.get("headings", []):
+        text = " ".join(str(h.get("text", "")).split()).strip()
+        level = str(h.get("level", "h2")).lower()
+        key = (level, text.lower())
+        if text and key not in seen_headings:
+            seen_headings.add(key)
+            cleaned_headings.append({"level": level, "text": text})
+    cleaned["headings"] = cleaned_headings
+
+    # Deduplicate paragraphs
+    seen_paras = set()
+    cleaned_paras = []
+    for p in content_dict.get("paragraphs", []):
+        text = " ".join(str(p).split()).strip()
+        if text and text.lower() not in seen_paras:
+            seen_paras.add(text.lower())
+            cleaned_paras.append(text)
+    cleaned["paragraphs"] = cleaned_paras
+
+    # Deduplicate CTAs
+    seen_ctas = set()
+    cleaned_ctas = []
+    for cta in content_dict.get("cta_text", []):
+        text = " ".join(str(cta).split()).strip()
+        if text and text.lower() not in seen_ctas:
+            seen_ctas.add(text.lower())
+            cleaned_ctas.append(text)
+    cleaned["cta_text"] = cleaned_ctas
+
+    # Deduplicate image alt texts
+    seen_alts = set()
+    cleaned_alts = []
+    for alt in content_dict.get("image_alt_texts", []):
+        text = " ".join(str(alt).split()).strip()
+        if text and text.lower() not in seen_alts:
+            seen_alts.add(text.lower())
+            cleaned_alts.append(text)
+    cleaned["image_alt_texts"] = cleaned_alts
+
+    # Deduplicate sections
+    seen_sections = set()
+    cleaned_sections = []
+    for s in content_dict.get("sections", []):
+        h = " ".join(str(s.get("heading", "")).split()).strip()
+        c = " ".join(str(s.get("content", "")).split()).strip()
+        key = (h.lower(), c.lower())
+        if c and key not in seen_sections:
+            seen_sections.add(key)
+            cleaned_sections.append({
+                "heading": h or "General Content",
+                "level": s.get("level", "h2"),
+                "content": c,
+            })
+    cleaned["sections"] = cleaned_sections
+
+    return cleaned
+
+
+def structure_website_content(raw_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensures consistent, well-formed schema for extracted website content."""
+    cleaned = clean_extracted_content(raw_data)
+    return {
+        "url": cleaned.get("url", ""),
+        "title": cleaned.get("title", ""),
+        "meta_description": cleaned.get("meta_description", ""),
+        "headings": cleaned.get("headings", []),
+        "sections": cleaned.get("sections", []),
+        "paragraphs": cleaned.get("paragraphs", []),
+        "cta_text": cleaned.get("cta_text", []),
+        "image_alt_texts": cleaned.get("image_alt_texts", []),
+        "lists": cleaned.get("lists", []),
+    }
+
+
+def extract_website_content(html: str, url: str) -> Dict[str, Any]:
+    """Extracts meaningful website content from HTML string for the given URL.
+
+    Identifies title, meta description, headings (H1-H3), paragraphs, lists,
+    CTAs, image alt texts, and groups content into hierarchical sections.
+    Removes scripts, styles, boilerplate, and comments.
+    """
+    if not html or not isinstance(html, str):
+        return structure_website_content({"url": url})
+
+    parser = WebsiteContentExtractor()
+    try:
+        parser.feed(html)
+        parser.finalize()
+    except Exception as exc:
+        logger.warning("HTML parsing warning on %s: %s", url, str(exc))
+
+    raw_extracted = {
+        "url": url,
+        "title": parser.title,
+        "meta_description": parser.meta_description,
+        "headings": parser.headings,
+        "sections": parser.sections,
+        "paragraphs": parser.paragraphs,
+        "cta_text": parser.cta_text,
+        "image_alt_texts": parser.image_alt_texts,
+        "lists": parser.lists,
+    }
+
+    return structure_website_content(raw_extracted)
