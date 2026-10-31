@@ -742,3 +742,501 @@ def crawl_website(
         "pages": pages,
         "failed_urls": failed_urls,
     }
+
+
+# =============================================================================
+# GEMINI AI WEBSITE ANALYSIS
+# =============================================================================
+
+WEBSITE_ANALYSIS_SYSTEM_PROMPT = """You are an expert web content auditor, brand copy specialist, and SEO content strategist for BrandProof AI.
+Your objective is to evaluate the supplied website content and provide precise, actionable findings and recommendations across:
+1. Grammar and Spelling (errors, typos, punctuation, casing, subject-verb agreement)
+2. Readability and Clarity (sentence structure, jargon, excessive length, coherence)
+3. Tone and Communication (professionalism, consistency, audience fit, persuasiveness)
+4. Brand Consistency (strictly adhere to supplied brand guidelines, terminology, and preserved entities)
+5. Marketing Content Quality (value proposition, clear benefits, call-to-action effectiveness)
+6. SEO-Related Content Recommendations (title, meta description, heading hierarchy, image alt text quality)
+
+IMPORTANT CONSTRAINTS:
+- Only evaluate the content actually provided. Do NOT claim to measure or fabricate search rankings, backlinks, domain authority, page speed, or web traffic.
+- If no brand context is provided, do NOT invent brand rules.
+- For every specific finding, include page_url, section, original_text, suggested_text, category, severity ('low', 'medium', 'high'), and explanation.
+
+You must respond with valid JSON matching this schema:
+{
+    "status": "success",
+    "website_url": "URL of the site",
+    "website_metadata": {
+        "title": "Title of the website",
+        "meta_description": "Meta description"
+    },
+    "content_summary": "A concise overview of the website content and its purpose.",
+    "findings": [
+        {
+            "page_url": "page URL where issue was found",
+            "section": "heading or section name",
+            "original_text": "exact problematic text snippet",
+            "suggested_text": "clear revised text",
+            "category": "Grammar | Spelling | Readability | Tone | Brand | SEO | Marketing",
+            "severity": "low | medium | high",
+            "explanation": "Clear justification for the recommendation"
+        }
+    ],
+    "tone_analysis": {
+        "identified_tone": "e.g. Professional and authoritative",
+        "consistency": "e.g. Consistent across sections",
+        "recommendations": ["recommendation 1"]
+    },
+    "readability_analysis": {
+        "observations": ["observation 1"],
+        "recommendations": ["recommendation 1"]
+    },
+    "brand_analysis": {
+        "issues": ["issue 1"],
+        "recommendations": ["recommendation 1"]
+    },
+    "seo_content_analysis": {
+        "title_analysis": "Assessment of title tag length and relevance",
+        "meta_description_analysis": "Assessment of meta description",
+        "heading_analysis": ["heading structure assessment"],
+        "alt_text_issues": ["missing or poor alt text notes"],
+        "recommendations": ["SEO recommendation 1"]
+    },
+    "overall_recommendations": [
+        "Key priority 1",
+        "Key priority 2"
+    ],
+    "summary": {
+        "total_issues": 0,
+        "grammar_issues": 0,
+        "spelling_issues": 0,
+        "brand_issues": 0,
+        "readability_issues": 0,
+        "seo_content_issues": 0
+    }
+}
+"""
+
+
+def _get_ai_caller():
+    """Reuses the existing Gemini caller from app.user_improvements or fallback."""
+    try:
+        from app.user_improvements import get_gemini_response
+        return get_gemini_response
+    except Exception:
+        # Fallback to direct import if running standalone
+        try:
+            import sys
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import user_improvements
+            return user_improvements.get_gemini_response
+        except Exception as exc:
+            logger.error("Could not import existing Gemini caller: %s", exc)
+            raise RuntimeError(
+                "Gemini integration service is unavailable. "
+                "Ensure GEMINI_API_KEY is configured in your environment."
+            )
+
+
+def build_website_analysis_prompt(
+    content_chunk: Dict[str, Any],
+    context: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Constructs a comprehensive analysis prompt containing content and context."""
+    ctx = context or {}
+    brand_name = ctx.get("brand_name", "")
+    brand_guidelines = ctx.get("brand_guidelines", [])
+    preferred_terminology = ctx.get("preferred_terminology", [])
+    preserved_entities = ctx.get("preserved_entities", [])
+    target_audience = ctx.get("target_audience", "General Public / Prospective Customers")
+    content_type = ctx.get("content_type", "Website Copy")
+    language = ctx.get("language", "English")
+    custom_instructions = ctx.get("custom_instructions", [])
+
+    prompt_parts = [
+        "## AUDIT CONTEXT",
+        f"- Target Audience: {target_audience}",
+        f"- Content Type: {content_type}",
+        f"- Language: {language}",
+    ]
+
+    if brand_name:
+        prompt_parts.append(f"- Brand Name: {brand_name}")
+    if brand_guidelines:
+        prompt_parts.append("- Brand Guidelines:")
+        for bg in brand_guidelines:
+            prompt_parts.append(f"  * {bg}")
+    if preferred_terminology:
+        prompt_parts.append("- Preferred Terminology:")
+        for term in preferred_terminology:
+            prompt_parts.append(f"  * {term}")
+    if preserved_entities:
+        prompt_parts.append("- Preserved Entities (Do not alter):")
+        for ent in preserved_entities:
+            prompt_parts.append(f"  * {ent}")
+    if custom_instructions:
+        prompt_parts.append("- Custom User Instructions:")
+        for inst in custom_instructions:
+            prompt_parts.append(f"  * {inst}")
+
+    prompt_parts.append("\n## EXTRACTED WEBSITE CONTENT TO AUDIT:")
+    prompt_parts.append(json.dumps(content_chunk, indent=2))
+
+    prompt_parts.append(
+        "\nPerform a comprehensive audit of the extracted website content above. "
+        "Strictly adhere to the output JSON format specified in the system instruction."
+    )
+
+    return "\n".join(prompt_parts)
+
+
+def chunk_content_sections(
+    content_or_pages: Any,
+    max_chars_per_chunk: int = 15000,
+) -> List[Dict[str, Any]]:
+    """Splits large website content into manageable chunks for LLM processing."""
+    if isinstance(content_or_pages, dict) and "pages" in content_or_pages:
+        page_list = content_or_pages["pages"]
+    elif isinstance(content_or_pages, list):
+        page_list = content_or_pages
+    elif isinstance(content_or_pages, dict):
+        page_list = [content_or_pages]
+    else:
+        return []
+
+    chunks: List[Dict[str, Any]] = []
+
+    for page in page_list:
+        sections = page.get("sections", [])
+        base_meta = {
+            "url": page.get("url", ""),
+            "title": page.get("title", ""),
+            "meta_description": page.get("meta_description", ""),
+            "cta_text": page.get("cta_text", []),
+            "image_alt_texts": page.get("image_alt_texts", []),
+        }
+
+        if not sections:
+            # If page has paragraphs but no structured sections
+            paragraphs = page.get("paragraphs", [])
+            if paragraphs:
+                chunks.append({
+                    **base_meta,
+                    "sections": [{
+                        "heading": "General Content",
+                        "level": "h1",
+                        "content": " ".join(paragraphs),
+                    }],
+                })
+            else:
+                chunks.append({**base_meta, "sections": []})
+            continue
+
+        current_sections: List[Dict[str, Any]] = []
+        current_length = len(json.dumps(base_meta))
+
+        for sec in sections:
+            sec_len = len(json.dumps(sec))
+            if current_sections and (current_length + sec_len > max_chars_per_chunk):
+                chunks.append({**base_meta, "sections": current_sections})
+                current_sections = [sec]
+                current_length = len(json.dumps(base_meta)) + sec_len
+            else:
+                current_sections.append(sec)
+                current_length += sec_len
+
+        if current_sections:
+            chunks.append({**base_meta, "sections": current_sections})
+
+    return chunks if chunks else [content_or_pages] if isinstance(content_or_pages, dict) else []
+
+
+def combine_analysis_results(
+    results: List[Dict[str, Any]],
+    default_url: str = "",
+) -> Dict[str, Any]:
+    """Combines and deduplicates findings and recommendations from multiple chunks."""
+    if not results:
+        return {
+            "status": "success",
+            "website_url": default_url,
+            "website_metadata": {"title": "", "meta_description": ""},
+            "content_summary": "No content could be analyzed.",
+            "findings": [],
+            "tone_analysis": {"identified_tone": "Unknown", "consistency": "N/A", "recommendations": []},
+            "readability_analysis": {"observations": [], "recommendations": []},
+            "brand_analysis": {"issues": [], "recommendations": []},
+            "seo_content_analysis": {
+                "title_analysis": "",
+                "meta_description_analysis": "",
+                "heading_analysis": [],
+                "alt_text_issues": [],
+                "recommendations": [],
+            },
+            "overall_recommendations": [],
+            "summary": {
+                "total_issues": 0,
+                "grammar_issues": 0,
+                "spelling_issues": 0,
+                "brand_issues": 0,
+                "readability_issues": 0,
+                "seo_content_issues": 0,
+            },
+        }
+
+    # Use primary chunk for metadata
+    first = results[0]
+    merged_url = first.get("website_url") or default_url
+    merged_meta = first.get("website_metadata") or {"title": "", "meta_description": ""}
+    content_summaries: List[str] = []
+
+    all_findings: List[Dict[str, Any]] = []
+    seen_finding_keys = set()
+
+    all_overall_recs: List[str] = []
+    seen_overall_recs = set()
+
+    # Aggregate tone, readability, brand, and SEO data
+    tone_recs: List[str] = []
+    readability_obs: List[str] = []
+    readability_recs: List[str] = []
+    brand_issues: List[str] = []
+    brand_recs: List[str] = []
+    seo_headings: List[str] = []
+    seo_alts: List[str] = []
+    seo_recs: List[str] = []
+
+    for res in results:
+        summary_text = res.get("content_summary")
+        if summary_text and summary_text not in content_summaries:
+            content_summaries.append(summary_text)
+
+        # Deduplicate findings
+        for f in res.get("findings", []):
+            if not isinstance(f, dict):
+                continue
+            orig = str(f.get("original_text", "")).strip().lower()
+            sugg = str(f.get("suggested_text", "")).strip().lower()
+            page = str(f.get("page_url", "")).strip().lower()
+            key = (page, orig, sugg)
+            if key not in seen_finding_keys:
+                seen_finding_keys.add(key)
+                all_findings.append(f)
+
+        # Tone
+        t = res.get("tone_analysis", {})
+        if isinstance(t, dict):
+            for r in t.get("recommendations", []):
+                if r and r not in tone_recs:
+                    tone_recs.append(r)
+
+        # Readability
+        r_dict = res.get("readability_analysis", {})
+        if isinstance(r_dict, dict):
+            for obs in r_dict.get("observations", []):
+                if obs and obs not in readability_obs:
+                    readability_obs.append(obs)
+            for r in r_dict.get("recommendations", []):
+                if r and r not in readability_recs:
+                    readability_recs.append(r)
+
+        # Brand
+        b = res.get("brand_analysis", {})
+        if isinstance(b, dict):
+            for issue in b.get("issues", []):
+                if issue and issue not in brand_issues:
+                    brand_issues.append(issue)
+            for r in b.get("recommendations", []):
+                if r and r not in brand_recs:
+                    brand_recs.append(r)
+
+        # SEO
+        s = res.get("seo_content_analysis", {})
+        if isinstance(s, dict):
+            for h in s.get("heading_analysis", []):
+                if h and h not in seo_headings:
+                    seo_headings.append(h)
+            for a in s.get("alt_text_issues", []):
+                if a and a not in seo_alts:
+                    seo_alts.append(a)
+            for r in s.get("recommendations", []):
+                if r and r not in seo_recs:
+                    seo_recs.append(r)
+
+        # Overall recommendations
+        for o in res.get("overall_recommendations", []):
+            if o and o not in seen_overall_recs:
+                seen_overall_recs.add(o)
+                all_overall_recs.append(o)
+
+    # Recalculate summary issue counts accurately
+    grammar_count = 0
+    spelling_count = 0
+    brand_count = 0
+    readability_count = 0
+    seo_count = 0
+
+    for f in all_findings:
+        cat = str(f.get("category", "")).lower()
+        if "grammar" in cat:
+            grammar_count += 1
+        elif "spelling" in cat:
+            spelling_count += 1
+        elif "brand" in cat:
+            brand_count += 1
+        elif "readab" in cat or "clarity" in cat:
+            readability_count += 1
+        elif "seo" in cat:
+            seo_count += 1
+
+    tone_info = first.get("tone_analysis", {})
+    seo_info = first.get("seo_content_analysis", {})
+
+    return {
+        "status": "success",
+        "website_url": merged_url,
+        "website_metadata": merged_meta,
+        "content_summary": " ".join(content_summaries) or first.get("content_summary", ""),
+        "findings": all_findings,
+        "tone_analysis": {
+            "identified_tone": tone_info.get("identified_tone", "Professional"),
+            "consistency": tone_info.get("consistency", "Consistent"),
+            "recommendations": tone_recs,
+        },
+        "readability_analysis": {
+            "observations": readability_obs,
+            "recommendations": readability_recs,
+        },
+        "brand_analysis": {
+            "issues": brand_issues,
+            "recommendations": brand_recs,
+        },
+        "seo_content_analysis": {
+            "title_analysis": seo_info.get("title_analysis", ""),
+            "meta_description_analysis": seo_info.get("meta_description_analysis", ""),
+            "heading_analysis": seo_headings,
+            "alt_text_issues": seo_alts,
+            "recommendations": seo_recs,
+        },
+        "overall_recommendations": all_overall_recs,
+        "summary": {
+            "total_issues": len(all_findings),
+            "grammar_issues": grammar_count,
+            "spelling_issues": spelling_count,
+            "brand_issues": brand_count,
+            "readability_issues": readability_count,
+            "seo_content_issues": seo_count,
+        },
+    }
+
+
+def analyze_website_content(
+    content: Any,
+    context: Optional[Dict[str, Any]] = None,
+    gemini_client: Optional[Any] = None,
+    max_chars_per_chunk: int = 15000,
+) -> Dict[str, Any]:
+    """Analyzes extracted website content using Gemini across all evaluation dimensions.
+
+    Handles chunking for large content and combines multi-chunk results.
+    """
+    chunks = chunk_content_sections(content, max_chars_per_chunk=max_chars_per_chunk)
+    if not chunks:
+        return {
+            "status": "error",
+            "message": "No content available for website analysis.",
+            "findings": [],
+            "summary": {"total_issues": 0},
+        }
+
+    caller = gemini_client or _get_ai_caller()
+    chunk_results: List[Dict[str, Any]] = []
+
+    for chunk in chunks:
+        prompt = build_website_analysis_prompt(chunk, context=context)
+        try:
+            raw_res = caller(prompt, WEBSITE_ANALYSIS_SYSTEM_PROMPT)
+            if isinstance(raw_res, str):
+                cleaned_str = raw_res.strip()
+                if cleaned_str.startswith("```"):
+                    cleaned_str = re.sub(r"^```(?:json)?\s*", "", cleaned_str, flags=re.IGNORECASE)
+                    cleaned_str = re.sub(r"\s*```$", "", cleaned_str)
+                raw_res = json.loads(cleaned_str)
+
+            if isinstance(raw_res, dict):
+                chunk_results.append(raw_res)
+            else:
+                logger.warning("Gemini returned non-dict response format: %s", type(raw_res))
+        except Exception as exc:
+            logger.error("Error during Gemini website analysis: %s", exc)
+            return {
+                "status": "error",
+                "message": f"Gemini analysis error: {str(exc)}",
+                "findings": [],
+                "summary": {"total_issues": 0},
+            }
+
+    base_url = ""
+    if isinstance(content, dict):
+        base_url = content.get("url") or content.get("start_url") or ""
+
+    return combine_analysis_results(chunk_results, default_url=base_url)
+
+
+def analyze_website(
+    url: str,
+    context: Optional[Dict[str, Any]] = None,
+    max_pages: int = 1,
+    max_depth: int = 2,
+    check_dns: bool = True,
+    check_robots: bool = False,
+    session: Optional[requests.Session] = None,
+    fetch_fn: Optional[Any] = None,
+    gemini_client: Optional[Any] = None,
+    max_chars_per_chunk: int = 15000,
+) -> Dict[str, Any]:
+    """End-to-end website audit pipeline: SSRF validation, crawling, extraction, and AI analysis.
+
+    Supports Mode A (single-page analysis, default: max_pages=1) and Mode B (limited crawl).
+    """
+    valid, norm_url_or_err = validate_url(url, check_dns=check_dns)
+    if not valid:
+        return {
+            "status": "error",
+            "message": f"Invalid or unsafe URL: {norm_url_or_err}",
+            "website_url": url,
+            "findings": [],
+            "summary": {"total_issues": 0},
+        }
+
+    crawl_result = crawl_website(
+        start_url=norm_url_or_err,
+        max_pages=max_pages,
+        max_depth=max_depth,
+        check_dns=check_dns,
+        check_robots=check_robots,
+        session=session,
+        fetch_fn=fetch_fn,
+    )
+
+    if not crawl_result.get("pages"):
+        failed_reasons = crawl_result.get("failed_urls", [])
+        error_msg = failed_reasons[0].get("error", "Failed to fetch website.") if failed_reasons else "No pages could be scraped."
+        return {
+            "status": "error",
+            "message": error_msg,
+            "website_url": norm_url_or_err,
+            "findings": [],
+            "summary": {"total_issues": 0},
+        }
+
+    analysis_res = analyze_website_content(
+        content=crawl_result,
+        context=context,
+        gemini_client=gemini_client,
+        max_chars_per_chunk=max_chars_per_chunk,
+    )
+
+    analysis_res["website_url"] = norm_url_or_err
+    analysis_res["pages_crawled"] = crawl_result.get("pages_crawled", 1)
+    return analysis_res
