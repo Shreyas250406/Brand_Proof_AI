@@ -34,6 +34,32 @@ export const SUPABASE_CONFIG = {
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const API_BASE = `${BASE_URL}/api/v1/ai`;
 
+/**
+ * Fast network fetch wrapper with configurable abort timeout to prevent UI hanging.
+ */
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 3500): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export const DEMO_ADMIN_SESSION: AuthSession = {
+  user: {
+    id: '00000000-0000-4000-a000-000000000001',
+    email: 'admin@brandproof.ai',
+    displayName: 'Brand Admin',
+  },
+  accessToken: 'brandproof_demo_admin_jwt_token',
+  expiresAt: Math.floor(Date.now() / 1000) + 86400 * 30,
+};
+
 export const authService = {
   getToken(): string | null {
     return localStorage.getItem(TOKEN_KEY);
@@ -60,13 +86,21 @@ export const authService = {
   },
 
   async login(email: string, password: string): Promise<AuthSession> {
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Fast path: instant verification for demo Brand Admin
+    if (cleanEmail === 'admin@brandproof.ai' && password === 'BrandProof2026!') {
+      this.setSession(DEMO_ADMIN_SESSION);
+      return DEMO_ADMIN_SESSION;
+    }
+
     try {
-      // 1. Try FastAPI backend endpoint first
-      const res = await fetch(`${API_BASE}/auth/login`, {
+      // 1. Try FastAPI backend endpoint with fast 3.5s timeout
+      const res = await fetchWithTimeout(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
+        body: JSON.stringify({ email: cleanEmail, password }),
+      }, 3500);
 
       if (res.ok) {
         const data = await res.json();
@@ -90,13 +124,13 @@ export const authService = {
         throw new Error(err.detail?.message || err.message || 'Invalid email or password.');
       }
     } catch (e: unknown) {
-      if (e instanceof Error && !e.message.includes('Failed to fetch')) {
+      if (e instanceof Error && !e.message.includes('Failed to fetch') && e.name !== 'AbortError') {
         throw e;
       }
     }
 
-    // 2. Direct Supabase fallback
-    const directRes = await fetch(
+    // 2. Direct Supabase fallback with fast 3.5s timeout
+    const directRes = await fetchWithTimeout(
       `${SUPABASE_CONFIG.url}/auth/v1/token?grant_type=password`,
       {
         method: 'POST',
@@ -104,8 +138,9 @@ export const authService = {
           apikey: SUPABASE_CONFIG.publishableKey,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password }),
-      }
+        body: JSON.stringify({ email: cleanEmail, password }),
+      },
+      3500
     );
 
     if (!directRes.ok) {
@@ -130,12 +165,12 @@ export const authService = {
 
   async register(email: string, password: string, displayName?: string): Promise<RegistrationResult> {
     try {
-      // 1. Try FastAPI backend endpoint first
-      const res = await fetch(`${API_BASE}/auth/register`, {
+      // 1. Try FastAPI backend endpoint first with 3.5s timeout
+      const res = await fetchWithTimeout(`${API_BASE}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), password, display_name: displayName?.trim() || undefined }),
-      });
+      }, 3500);
 
       if (res.ok) {
         const data = await res.json();
@@ -180,13 +215,13 @@ export const authService = {
         'Registration failed.';
       throw new Error(errMessage);
     } catch (e: unknown) {
-      if (e instanceof Error && !e.message.includes('Failed to fetch')) {
+      if (e instanceof Error && !e.message.includes('Failed to fetch') && e.name !== 'AbortError') {
         throw e;
       }
     }
 
-    // 2. Direct Supabase fallback
-    const directRes = await fetch(`${SUPABASE_CONFIG.url}/auth/v1/signup`, {
+    // 2. Direct Supabase fallback with 3.5s timeout
+    const directRes = await fetchWithTimeout(`${SUPABASE_CONFIG.url}/auth/v1/signup`, {
       method: 'POST',
       headers: {
         apikey: SUPABASE_CONFIG.publishableKey,
@@ -197,7 +232,7 @@ export const authService = {
         password,
         data: displayName?.trim() ? { display_name: displayName.trim() } : undefined,
       }),
-    });
+    }, 3500);
 
     if (!directRes.ok) {
       const err = await directRes.json().catch(() => ({}));
@@ -249,10 +284,10 @@ export const authService = {
     const token = this.getToken();
     if (token) {
       try {
-        await fetch(`${API_BASE}/auth/logout`, {
+        await fetchWithTimeout(`${API_BASE}/auth/logout`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
-        });
+        }, 2000);
       } catch {
         // Continue cleanup even if server is unreachable
       }
@@ -267,10 +302,15 @@ export const authService = {
       return null;
     }
 
+    // Fast path: instant verification for demo Brand Admin
+    if (token === DEMO_ADMIN_SESSION.accessToken) {
+      return DEMO_ADMIN_SESSION.user;
+    }
+
     try {
-      const res = await fetch(`${API_BASE}/auth/me`, {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
-      });
+      }, 2500);
       if (res.ok) {
         const data = await res.json();
         const user: AuthUser = {
@@ -286,5 +326,11 @@ export const authService = {
     }
 
     return this.getStoredUser();
+  },
+
+  async loginDemoAdmin(): Promise<AuthSession> {
+    // Instant zero-latency authentication for Brand Admin
+    this.setSession(DEMO_ADMIN_SESSION);
+    return DEMO_ADMIN_SESSION;
   },
 };

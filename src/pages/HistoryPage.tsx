@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
   History,
+  Download,
 } from 'lucide-react';
 import type { Analysis, AnalysisStatus, ReviewStatus } from '@/types/domain';
 import { historyService } from '@/services/demo';
@@ -28,6 +29,7 @@ import {
   getSeverityColor,
 } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { downloadAnalysisReport } from '@/services/report';
 
 const STATUS_OPTIONS: AnalysisStatus[] = ['completed', 'no_findings', 'failed'];
 const REVIEW_STATUS_OPTIONS: ReviewStatus[] = ['not_started', 'in_progress', 'corrections_applied', 'completed'];
@@ -280,6 +282,7 @@ export function HistoryPage() {
               analysis={analysis}
               onClick={() => handleOpenAnalysis(analysis)}
               onDelete={() => setDeleteId(analysis.id)}
+              onDownload={() => downloadAnalysisReport(analysis, addToast)}
             />
           ))}
         </div>
@@ -320,9 +323,10 @@ interface HistoryRowProps {
   analysis: Analysis;
   onClick: () => void;
   onDelete: () => void;
+  onDownload: () => void;
 }
 
-function HistoryRow({ analysis, onClick, onDelete }: HistoryRowProps) {
+function HistoryRow({ analysis, onClick, onDelete, onDownload }: HistoryRowProps) {
   const criticalCount = analysis.findings.filter(f => f.severity === 'critical').length;
   const majorCount = analysis.findings.filter(f => f.severity === 'major').length;
   const minorCount = analysis.findings.filter(f => f.severity === 'minor').length;
@@ -376,6 +380,14 @@ function HistoryRow({ analysis, onClick, onDelete }: HistoryRowProps) {
 
       {/* Actions */}
       <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={(e) => { e.stopPropagation(); onDownload(); }}
+          className="btn-ghost p-2 text-surface-500 hover:text-brand-600"
+          aria-label="Download Audit Report"
+          title="Download AI Report (PDF)"
+        >
+          <Download className="w-4 h-4" />
+        </button>
         <button
           onClick={onClick}
           className="btn-ghost p-2"

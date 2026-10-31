@@ -4,7 +4,7 @@
 
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Shield, Lock, Mail, User, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Shield, Lock, Mail, User, ArrowRight, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useApp } from '@/context/AppContext';
 
@@ -16,7 +16,8 @@ export function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const { login, register } = useAuth();
+  const { login, register, loginDemoAdmin } = useAuth();
+  const [demoLoading, setDemoLoading] = useState(false);
   const { addToast } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
@@ -73,11 +74,23 @@ export function AuthPage() {
     }
   };
 
-  const fillAdminCredentials = () => {
-    setEmail('admin@brandproof.ai');
-    setPassword('BrandProof2026!');
-    setIsSignUp(false);
+  const handleDemoAdminLogin = async () => {
     setErrorMessage(null);
+    setDemoLoading(true);
+    try {
+      await loginDemoAdmin();
+      addToast({
+        title: 'Welcome, Brand Admin!',
+        description: 'Logged in successfully with demo Brand Admin credentials.',
+        variant: 'success',
+      });
+      navigate(from, { replace: true });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Demo login failed.';
+      setErrorMessage(msg);
+    } finally {
+      setDemoLoading(false);
+    }
   };
 
   return (
@@ -211,16 +224,37 @@ export function AuthPage() {
             </button>
           </form>
 
-          {/* Quick Initial User Fill */}
-          <div className="pt-2 border-t border-surface-100 text-center">
+          {/* Divider */}
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-surface-200" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white px-2.5 text-surface-400 font-medium">Or Quick Access</span>
+            </div>
+          </div>
+
+          {/* Demo Brand Admin Login Button */}
+          <div className="space-y-2">
             <button
               type="button"
-              onClick={fillAdminCredentials}
-              className="text-xs text-brand-600 hover:text-brand-700 font-medium inline-flex items-center gap-1.5"
+              disabled={loading || demoLoading}
+              onClick={handleDemoAdminLogin}
+              className="w-full py-2.5 px-4 rounded-xl border border-brand-200 bg-brand-50/80 hover:bg-brand-100 text-brand-700 text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-xs hover:shadow-sm disabled:opacity-50"
+              title="One-click login as Brand Admin using verified demo credentials"
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Use initial admin credentials (admin@brandproof.ai)</span>
+              {demoLoading ? (
+                <div className="w-4 h-4 border-2 border-brand-600/30 border-t-brand-600 rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Shield className="w-4 h-4 text-brand-600" />
+                  <span>Demo Credentials (Brand Admin Login)</span>
+                </>
+              )}
             </button>
+            <p className="text-[11px] text-center text-surface-400">
+              One-click instant login with pre-configured Brand Admin role (<code className="text-surface-600 font-mono">admin@brandproof.ai</code>)
+            </p>
           </div>
         </div>
 

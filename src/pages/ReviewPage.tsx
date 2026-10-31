@@ -11,6 +11,7 @@ import {
   Square,
   Copy,
   Download,
+  FileText,
   Edit3,
   CheckCircle2,
   AlertCircle,
@@ -48,6 +49,7 @@ import {
   getFeedbackLabel,
 } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { downloadAnalysisReport } from '@/services/report';
 
 const ALL_CATEGORIES: FindingCategory[] = [
   'grammar', 'spelling', 'punctuation', 'style', 'clarity',
@@ -220,7 +222,17 @@ export function ReviewPage() {
     if (!content) return;
     const name = currentAnalysis.name.replace(/[^a-z0-9_-]/gi, '_');
     downloadTextFile(content, `${name}_corrected.txt`);
-    addToast({ title: 'Downloaded', variant: 'success' });
+    addToast({ title: 'Downloaded text file', variant: 'success' });
+  }
+
+  async function handleDownloadReport() {
+    if (!currentAnalysis) return;
+    const effectiveCorrected = isEditing ? editedContent : correctedContent;
+    const analysisForReport = {
+      ...currentAnalysis,
+      correctedContent: effectiveCorrected ?? currentAnalysis.correctedContent,
+    };
+    await downloadAnalysisReport(analysisForReport, addToast);
   }
 
   // -----------------------------------------------------------
@@ -277,6 +289,14 @@ export function ReviewPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleDownloadReport}
+            className="btn-primary text-sm flex items-center gap-1.5 shadow-sm"
+            title="Download formatted 2-page Audit Report with red error markings and proofs"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Download AI Report (PDF)</span>
+          </button>
           {correctedContent && (
             <button onClick={() => setResetDialogOpen(true)} className="btn-ghost text-sm">
               <RotateCcw className="w-4 h-4" />
@@ -539,9 +559,13 @@ export function ReviewPage() {
                         <Copy className="w-4 h-4" />
                         Copy
                       </button>
-                      <button onClick={handleDownload} className="btn-secondary text-sm">
+                      <button onClick={handleDownloadReport} className="btn-primary text-sm flex items-center gap-1.5 shadow-sm" title="Download 2-page Audit Report with red markings & proofs">
+                        <FileText className="w-4 h-4" />
+                        Download Report (PDF)
+                      </button>
+                      <button onClick={handleDownload} className="btn-secondary text-sm" title="Export corrected text as .txt">
                         <Download className="w-4 h-4" />
-                        Download
+                        Export (.txt)
                       </button>
                     </>
                   )}

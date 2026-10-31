@@ -106,6 +106,7 @@ export interface Analysis {
   isDemo: boolean;
   createdAt: string; // ISO 8601
   updatedAt: string; // ISO 8601
+  summary?: string;
   errorMessage?: string;
 }
 

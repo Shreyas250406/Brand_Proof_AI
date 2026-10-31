@@ -10,6 +10,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginDemoAdmin: () => Promise<void>;
   register: (email: string, password: string, displayName?: string) => Promise<RegistrationResult>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
@@ -39,6 +40,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(session.user);
   }, []);
 
+  const loginDemoAdmin = useCallback(async () => {
+    const session = await authService.loginDemoAdmin();
+    setUser(session.user);
+  }, []);
+
   const register = useCallback(async (email: string, password: string, displayName?: string) => {
     const result = await authService.register(email, password, displayName);
     if (result.session) {
@@ -58,6 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         loading,
         login,
+        loginDemoAdmin,
         register,
         logout,
         isAuthenticated: !!user,

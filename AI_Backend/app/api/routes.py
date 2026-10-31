@@ -1,8 +1,9 @@
 """API route definitions for BrandProof AI Engine."""
 
+import re
 import logging
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, UploadFile, File, Form, Header, Query, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, Form, Header, Query, HTTPException, status, Response
 from app.api.schemas import (
     TextAnalysisRequest,
     TextAnalysisResponse,
@@ -23,6 +24,7 @@ from app.api.schemas import (
     HistoryListResponse,
     GrammarFinding,
     AnalysisSummary,
+    ReportGenerationRequest,
 )
 from app.core.config import settings
 from app.core.exceptions import (
@@ -45,6 +47,7 @@ from app.services.ai_provider import ai_provider_service
 from app.services.ocr_service import ocr_service
 from app.services.storage_service import storage_service, StoredImageMetadata
 from app.services.supabase_service import supabase_service
+from app.services.report_generator import report_generator_service
 
 logger = logging.getLogger(__name__)
 
@@ -766,6 +769,114 @@ async def delete_history_item(
         )
 
     return {"message": "Analysis deleted successfully."}
+
+
+# ------------------------------------------------------------------------------
+# PDF Report Generation Endpoints
+# ------------------------------------------------------------------------------
+
+@router.post(
+    "/generate-report",
+    summary="Generate downloadable 2-page PDF audit report",
+    responses={
+        200: {"content": {"application/pdf": {}}, "description": "Downloadable PDF audit report"},
+        400: {"model": ErrorResponse, "description": "Invalid report request data"},
+        500: {"model": ErrorResponse, "description": "PDF generation failed"},
+    },
+)
+async def generate_report(request: ReportGenerationRequest):
+    """Generates a downloadable 2-page BrandProof AI Audit Report in PDF format.
+    
+    - Page 1: Original text with detected errors marked in red with red underline, executive summary, and findings table.
+    - Page 2: Publication-ready corrected text, AI guideline proofs matrix, and reviewer sign-off block.
+    """
+    try:
+        findings_dicts = [f.model_dump() for f in request.findings]
+        pdf_bytes = report_generator_service.generate_report_pdf(
+            original_text=request.original_text,
+            corrected_text=request.corrected_text,
+            findings=findings_dicts,
+            summary=request.summary,
+            title=request.title,
+            model_name=request.model_name,
+            created_at=request.created_at,
+            content_type=request.content_type,
+            brand_context=request.brand_context,
+        )
+
+        filename = f"BrandProof_Report_{(request.title or 'Analysis').replace(' ', '_')}.pdf"
+        # Sanitize filename for HTTP header
+        safe_filename = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_filename}"',
+                "Content-Type": "application/pdf",
+            },
+        )
+    except Exception as exc:
+        logger.exception("Failed to generate PDF audit report")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error_type": "PDFGenerationError", "message": f"Failed to generate report: {str(exc)}"},
+        )
+
+
+@router.get(
+    "/report/{id}",
+    summary="Download PDF report for a saved analysis from history",
+    responses={
+        200: {"content": {"application/pdf": {}}, "description": "Downloadable PDF audit report"},
+        404: {"model": ErrorResponse, "description": "Analysis not found"},
+    },
+)
+async def download_analysis_report(id: str, authorization: Optional[str] = Header(None)):
+    """Fetches an existing analysis from Supabase and streams its 2-page PDF audit report."""
+    if not supabase_service.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error_type": "DatabaseConfigError", "message": "Supabase database is not configured."},
+        )
+
+    user = await get_current_user_optional(authorization)
+    user_id = user["user_id"] if user else None
+
+    item = supabase_service.get_analysis_by_id(analysis_id=id, user_id=user_id)
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error_type": "NotFoundError", "message": f"Analysis with ID '{id}' was not found."},
+        )
+
+    findings_raw = item.get("findings") or []
+    if isinstance(findings_raw, str):
+        try:
+            import json
+            findings_raw = json.loads(findings_raw)
+        except Exception:
+            findings_raw = []
+
+    pdf_bytes = report_generator_service.generate_report_pdf(
+        original_text=item.get("original_text") or "",
+        corrected_text=item.get("corrected_text") or item.get("original_text") or "",
+        findings=findings_raw if isinstance(findings_raw, list) else [],
+        summary=item.get("summary"),
+        title=f"BrandProof AI Audit - {id[:8]}",
+        model_name=item.get("model_name"),
+        created_at=item.get("created_at"),
+    )
+
+    safe_filename = f"BrandProof_Report_{id[:8]}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
+            "Content-Type": "application/pdf",
+        },
+    )
 
 
 # ------------------------------------------------------------------------------

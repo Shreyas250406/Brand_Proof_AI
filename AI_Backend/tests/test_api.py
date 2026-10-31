@@ -162,3 +162,44 @@ def test_analyze_image_endpoint_success(
         assert "findings" in res_data
         assert "corrected_text" in res_data
         assert "summary" in res_data
+
+
+def test_generate_report_pdf_endpoint(client: TestClient):
+    """Verifies POST /api/v1/ai/generate-report returns a valid 2-page PDF."""
+    payload = {
+        "title": "Launch Banner Review",
+        "original_text": "We is excited to announce our new prodcut launch next Tuesday!",
+        "corrected_text": "We are excited to announce our new product launch next Tuesday!",
+        "findings": [
+            {
+                "id": "finding_1",
+                "category": "grammar",
+                "severity": "high",
+                "original_text": "We is",
+                "suggestion": "We are",
+                "explanation": "Subject-verb agreement error: 'We' takes 'are'.",
+                "rule": "Grammar: Subject-Verb Agreement",
+            },
+            {
+                "id": "finding_2",
+                "category": "spelling",
+                "severity": "medium",
+                "original_text": "prodcut",
+                "suggestion": "product",
+                "explanation": "Spelling error: 'product'.",
+                "rule": "Spelling: Correct Vocabulary",
+            },
+        ],
+        "summary": "Text contains 2 issues. All corrected with brand guidelines.",
+        "content_type": "advertisement",
+        "model_name": "Gemini 3.5 Flash",
+    }
+
+    response = client.post("/api/v1/ai/generate-report", json=payload)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert "attachment" in response.headers["content-disposition"]
+    # PDF bytes always start with %PDF
+    assert response.content.startswith(b"%PDF")
+    assert len(response.content) > 1000
+

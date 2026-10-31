@@ -263,3 +263,29 @@ class ErrorResponse(BaseModel):
     error_type: str
     message: str
     details: Optional[Dict[str, str]] = None
+
+
+class ReportFindingInput(BaseModel):
+    """Input finding item for report generation."""
+    id: Optional[str] = None
+    category: str = "grammar"
+    severity: str = "medium"
+    original_text: str
+    suggestion: str
+    explanation: str
+    rule: Optional[str] = None
+    confidence: Optional[float] = None
+
+
+class ReportGenerationRequest(BaseModel):
+    """Request schema for generating a 2-page PDF compliance and audit report."""
+    title: Optional[str] = "BrandProof AI Content Audit Report"
+    original_text: str
+    corrected_text: str
+    findings: List[ReportFindingInput] = []
+    summary: Optional[str] = None
+    brand_context: Optional[str] = None
+    content_type: Optional[str] = None
+    model_name: Optional[str] = "Gemini 3.5 Flash"
+    created_at: Optional[str] = None
+

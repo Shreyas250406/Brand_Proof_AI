@@ -5,9 +5,7 @@ from typing import Optional, Tuple
 from app.api.schemas import (
     TextAnalysisRequest,
     TextAnalysisResponse,
-    ImageAnalysisResponse,
     OCRMetadata,
-    AnalysisSummary,
 )
 from app.core.config import settings
 from app.core.exceptions import PayloadTooLargeError
@@ -41,7 +39,7 @@ class TextProcessorService:
 
         if len(text) > settings.MAX_TEXT_LENGTH:
             raise PayloadTooLargeError(
-                f"Input text exceeds maximum allowed length of {settings.MAX_TEXT_LENGTH} characters (received {len(text)})."
+                f"Input text exceeds maximum allowed limit of {settings.MAX_TEXT_LENGTH} characters (received {len(text)})."
             )
 
         # Standardize line endings to \n
@@ -74,56 +72,6 @@ class TextProcessorService:
             image_bytes=image_bytes,
             content_type=content_type,
             filename=filename,
-        )
-
-    async def process_image_analysis(
-        self,
-        image_bytes: bytes,
-        content_type: Optional[str] = None,
-        filename: Optional[str] = None,
-        language: Optional[str] = "English",
-        analysis_content_type: Optional[str] = None,
-        target_audience: Optional[str] = None,
-        instructions: Optional[str] = None,
-        brand_context: Optional[str] = None,
-    ) -> ImageAnalysisResponse:
-        """Extracts text from image and executes grammar analysis pipeline."""
-        extracted_text, ocr_metadata = self.process_image_extraction(
-            image_bytes=image_bytes,
-            content_type=content_type,
-            filename=filename,
-        )
-
-        # If OCR returned empty text (e.g. image contains no text)
-        if not extracted_text.strip():
-            return ImageAnalysisResponse(
-                extracted_text="",
-                ocr_metadata=ocr_metadata,
-                findings=[],
-                corrected_text="",
-                summary=AnalysisSummary(
-                    total_findings=0,
-                    findings_by_category={},
-                    findings_by_severity={},
-                    assessment="No readable text detected in the provided image.",
-                ),
-            )
-
-        analysis_response = await self.grammar_analyzer.analyze(
-            text=extracted_text,
-            language=language,
-            content_type=analysis_content_type,
-            target_audience=target_audience,
-            instructions=instructions,
-            brand_context=brand_context,
-        )
-
-        return ImageAnalysisResponse(
-            extracted_text=extracted_text,
-            ocr_metadata=ocr_metadata,
-            findings=analysis_response.findings,
-            corrected_text=analysis_response.corrected_text,
-            summary=analysis_response.summary,
         )
 
 
