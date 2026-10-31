@@ -1267,3 +1267,136 @@ def analyze_website(
     analysis_res["website_url"] = norm_url_or_err
     analysis_res["pages_crawled"] = crawl_result.get("pages_crawled", 1)
     return analysis_res
+
+
+if __name__ == "__main__":
+    print("=" * 75)
+    print("BrandProof AI - Standalone Website Scraping & Content Analysis Module")
+    print("=" * 75)
+
+    sample_site_html = """<!DOCTYPE html>
+<html>
+<head>
+    <title>Nexora Cloud - Next-Gen Workflow Automation</title>
+    <meta name="description" content="Nexora provides enterprise workflow automation and analytics tools.">
+</head>
+<body>
+    <h1>Empower Your Team With Nexora Cloud</h1>
+    <p>We provides enterprise-grade AI automation that accelerates business outcomes.</p>
+    <h2>Key Solutions</h2>
+    <p>Automate repetitive tasks, reduce manual errors, and scale your operations effortlessly.</p>
+    <h2>Customer Testimonials</h2>
+    <p>Over 5,000 businesses relies on Nexora everyday.</p>
+    <button>Start 14-Day Free Trial</button>
+    <a class="btn btn-secondary" href="/demo">Request Live Demo</a>
+    <img src="/workflow.png" alt="Nexora Workflow Builder Dashboard" />
+</body>
+</html>"""
+
+    demo_context = {
+        "brand_name": "Nexora Cloud",
+        "brand_guidelines": [
+            "Always refer to the company as 'Nexora Cloud' on first mention",
+            "Use active, confident voice",
+        ],
+        "preferred_terminology": ["enterprise-grade", "seamless"],
+        "preserved_entities": ["Nexora Cloud"],
+        "target_audience": "Enterprise IT Leaders & CTOs",
+        "content_type": "B2B SaaS Landing Page",
+        "language": "English",
+        "custom_instructions": ["Highlight any grammatical agreement errors and weak CTA copy"],
+    }
+
+    print("\n[1] Demonstrating Single-Page Content Extraction:")
+    extracted = extract_website_content(sample_site_html, "https://nexora.example.com")
+    print(f"Title: {extracted['title']}")
+    print(f"Meta Description: {extracted['meta_description']}")
+    print(f"Headings Found: {len(extracted['headings'])}")
+    print(f"Sections Found: {len(extracted['sections'])}")
+    print(f"CTAs: {extracted['cta_text']}")
+    print(f"Alt Texts: {extracted['image_alt_texts']}")
+
+    print("\n[2] Demonstrating Website Content Analysis:")
+    demo_llm = lambda prompt, sys_prompt: {
+        "status": "success",
+        "website_url": "https://nexora.example.com",
+        "website_metadata": {
+            "title": extracted["title"],
+            "meta_description": extracted["meta_description"],
+        },
+        "content_summary": "B2B SaaS landing page marketing AI workflow automation to enterprise teams.",
+        "findings": [
+            {
+                "page_url": "https://nexora.example.com",
+                "section": "Empower Your Team With Nexora Cloud",
+                "original_text": "We provides enterprise-grade AI automation",
+                "suggested_text": "We provide enterprise-grade AI automation",
+                "category": "Grammar",
+                "severity": "high",
+                "explanation": "Subject-verb agreement error: 'We' takes the plural verb 'provide'.",
+            },
+            {
+                "page_url": "https://nexora.example.com",
+                "section": "Customer Testimonials",
+                "original_text": "Over 5,000 businesses relies on Nexora everyday.",
+                "suggested_text": "Over 5,000 businesses rely on Nexora Cloud every day.",
+                "category": "Grammar",
+                "severity": "high",
+                "explanation": "Subject-verb agreement ('businesses rely') and 'every day' adverbial spacing.",
+            },
+            {
+                "page_url": "https://nexora.example.com",
+                "section": "Customer Testimonials",
+                "original_text": "Nexora",
+                "suggested_text": "Nexora Cloud",
+                "category": "Brand",
+                "severity": "medium",
+                "explanation": "Brand guideline requires 'Nexora Cloud' rather than colloquial 'Nexora'.",
+            },
+        ],
+        "tone_analysis": {
+            "identified_tone": "Professional and authoritative",
+            "consistency": "Consistent throughout sections",
+            "recommendations": ["Maintain active verbs and quantify product performance metrics."],
+        },
+        "readability_analysis": {
+            "observations": ["Headings are clear, scannable, and direct."],
+            "recommendations": ["Add bullet points for quick feature absorption."],
+        },
+        "brand_analysis": {
+            "issues": ["Inconsistent product naming: used 'Nexora' instead of 'Nexora Cloud'."],
+            "recommendations": ["Enforce 'Nexora Cloud' across all customer testimonials."],
+        },
+        "seo_content_analysis": {
+            "title_analysis": "Title is descriptive and within recommended 50-60 character length.",
+            "meta_description_analysis": "Meta description provides strong summary of product offering.",
+            "heading_analysis": ["H1 is well-defined and accurately describes the core platform."],
+            "alt_text_issues": [],
+            "recommendations": ["Consider adding secondary keywords to H2 subheadings."],
+        },
+        "overall_recommendations": [
+            "Correct subject-verb agreement in hero paragraph and testimonials.",
+            "Standardize brand entity to 'Nexora Cloud'.",
+            "Strengthen secondary call-to-action button phrasing.",
+        ],
+        "summary": {
+            "total_issues": 3,
+            "grammar_issues": 2,
+            "spelling_issues": 0,
+            "brand_issues": 1,
+            "readability_issues": 0,
+            "seo_content_issues": 0,
+        },
+    }
+
+    result = analyze_website_content(
+        extracted,
+        context=demo_context,
+        gemini_client=demo_llm,
+    )
+
+    print(json.dumps(result, indent=2))
+    print("\n" + "=" * 75)
+    print("Demo completed successfully!")
+    print("=" * 75)
+
