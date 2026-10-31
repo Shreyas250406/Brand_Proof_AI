@@ -636,6 +636,116 @@ class SupabaseService:
             logger.error("Failed to fetch image metadata for analysis %s: %s", analysis_id, exc)
             raise DatabaseError(f"Could not retrieve image metadata: {str(exc)}")
 
+    # --------------------------------------------------------------------------
+    # Media Analysis (Audio & Video) Methods
+    # --------------------------------------------------------------------------
+
+    def save_media_analysis(
+        self,
+        media_type: str,
+        duration_seconds: float,
+        original_filename: str,
+        transcription: Dict[str, Any],
+        visual_text: Dict[str, Any],
+        combined_analysis: Dict[str, Any],
+        summary: Dict[str, Any],
+        user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Saves audio/video analysis result to public.media_analysis."""
+        client = self._get_client()
+
+        if user_id == LEGACY_DEMO_ADMIN_ID:
+            user_id = DEMO_ADMIN_USER_ID
+
+        payload = {
+            "media_type": media_type,
+            "duration_seconds": round(duration_seconds, 2),
+            "original_filename": original_filename,
+            "transcription": transcription,
+            "visual_text": visual_text,
+            "combined_analysis": combined_analysis,
+            "summary": summary,
+        }
+
+        if user_id:
+            payload["user_id"] = user_id
+
+        try:
+            table_obj = client.table("media_analysis") if hasattr(client, "table") else client.from_("media_analysis")
+            response = table_obj.insert(payload).execute()
+            if not response.data or len(response.data) == 0:
+                raise DatabaseError("Failed to insert record into media_analysis.")
+            return response.data[0]
+        except Exception as exc:
+            logger.error("Database error saving media analysis: %s", exc)
+            raise DatabaseError(f"Could not persist media analysis: {str(exc)}")
+
+    def get_media_analysis(
+        self,
+        analysis_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Retrieves a single media analysis record by UUID."""
+        client = self._get_client()
+        if user_id == LEGACY_DEMO_ADMIN_ID:
+            user_id = DEMO_ADMIN_USER_ID
+        try:
+            table_obj = client.table("media_analysis") if hasattr(client, "table") else client.from_("media_analysis")
+            query = table_obj.select("*").eq("id", analysis_id)
+            if user_id:
+                query = query.eq("user_id", user_id)
+            response = query.execute()
+            if response.data and len(response.data) > 0:
+                return response.data[0]
+            return None
+        except Exception as exc:
+            logger.error("Failed to get media analysis %s: %s", analysis_id, exc)
+            raise DatabaseError(f"Could not fetch media analysis record: {str(exc)}")
+
+    def list_media_analyses(
+        self,
+        user_id: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Queries media analysis history ordered chronologically."""
+        client = self._get_client()
+        try:
+            table_obj = client.table("media_analysis") if hasattr(client, "table") else client.from_("media_analysis")
+            query = table_obj.select("*")
+            if user_id:
+                if user_id == LEGACY_DEMO_ADMIN_ID:
+                    user_id = DEMO_ADMIN_USER_ID
+                query = query.eq("user_id", user_id)
+            else:
+                query = query.is_("user_id", "null")
+            query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
+            response = query.execute()
+            return response.data or []
+        except Exception as exc:
+            logger.error("Failed to list media analyses: %s", exc)
+            raise DatabaseError(f"Could not retrieve media analysis history: {str(exc)}")
+
+    def delete_media_analysis(
+        self,
+        analysis_id: str,
+        user_id: Optional[str] = None,
+    ) -> bool:
+        """Deletes a media analysis record."""
+        client = self._get_client()
+        if user_id == LEGACY_DEMO_ADMIN_ID:
+            user_id = DEMO_ADMIN_USER_ID
+        try:
+            table_obj = client.table("media_analysis") if hasattr(client, "table") else client.from_("media_analysis")
+            query = table_obj.delete().eq("id", analysis_id)
+            if user_id:
+                query = query.eq("user_id", user_id)
+            response = query.execute()
+            return bool(response.data)
+        except Exception as exc:
+            logger.error("Failed to delete media analysis %s: %s", analysis_id, exc)
+            raise DatabaseError(f"Could not delete media analysis: {str(exc)}")
+
 
 # Default singleton instance
 supabase_service = SupabaseService()

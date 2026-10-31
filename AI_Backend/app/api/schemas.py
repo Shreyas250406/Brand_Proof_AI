@@ -293,6 +293,91 @@ class ReportGenerationRequest(BaseModel):
     summary: Optional[str] = None
     brand_context: Optional[str] = None
     content_type: Optional[str] = None
+    model_name: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+# ------------------------------------------------------------------------------
+# Media Analysis (Audio & Video) Schemas
+# ------------------------------------------------------------------------------
+
+class SpeechFinding(BaseModel):
+    """Grammar or style finding detected within speech transcription."""
+    original_excerpt: str
+    suggested_correction: str
+    category: str
+    explanation: str
+    severity: str = "medium"
+
+
+class TranscriptionAnalysis(BaseModel):
+    """Original and proofread speech transcription with findings."""
+    original_text: str = ""
+    corrected_text: str = ""
+    language: Optional[str] = "en"
+    findings: List[SpeechFinding] = Field(default_factory=list)
+
+
+class VisualTextSegment(BaseModel):
+    """Deduplicated on-screen text segment with timestamp."""
+    timestamp: str
+    text: str
+
+
+class VisualFinding(BaseModel):
+    """Grammar, spelling, or brand finding detected on visible video text."""
+    timestamp: str
+    original_text: str
+    suggested_text: str
+    category: str
+    explanation: str
+    severity: str = "medium"
+
+
+class VisualTextAnalysis(BaseModel):
+    """Second-by-second visual OCR segments and proofreading findings."""
+    segments: List[VisualTextSegment] = Field(default_factory=list)
+    findings: List[VisualFinding] = Field(default_factory=list)
+
+
+class CombinedFinding(BaseModel):
+    """Inconsistency or contradiction between spoken and visual content."""
+    topic: Optional[str] = None
+    visual_text: Optional[str] = None
+    spoken_text: Optional[str] = None
+    contradiction_type: Optional[str] = None
+    explanation: str
+    severity: str = "medium"
+
+
+class CombinedAnalysis(BaseModel):
+    """Cross-modal alignment evaluation and brand recommendations."""
+    findings: List[CombinedFinding] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+
+
+class MediaAnalysisSummary(BaseModel):
+    """Summary counts of all issues found across speech and video."""
+    total_issues: int = 0
+    grammar_issues: int = 0
+    spelling_issues: int = 0
+    punctuation_issues: int = 0
+    brand_issues: int = 0
+    clarity_issues: int = 0
+
+
+class MediaAnalysisResponse(BaseModel):
+    """Unified response schema for audio and video brand analysis."""
+    status: str = "success"
+    media_type: str
+    duration: float = 0.0
+    transcription: TranscriptionAnalysis = Field(default_factory=TranscriptionAnalysis)
+    visual_text: VisualTextAnalysis = Field(default_factory=VisualTextAnalysis)
+    combined_analysis: CombinedAnalysis = Field(default_factory=CombinedAnalysis)
+    summary: MediaAnalysisSummary = Field(default_factory=MediaAnalysisSummary)
+    id: Optional[str] = None
+    created_at: Optional[str] = None
+
     model_name: Optional[str] = "Gemini 3.5 Flash"
     created_at: Optional[str] = None
 

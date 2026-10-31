@@ -89,3 +89,18 @@ class DatabaseError(BrandProofAIException):
 class AuthenticationError(BrandProofAIException):
     """Raised when Supabase Auth registration, login, or session check fails."""
     pass
+
+
+class MediaProcessingError(BrandProofAIException):
+    """Raised when audio/video extraction or processing fails."""
+    pass
+
+
+class InvalidMediaError(BrandProofAIException):
+    """Raised when uploaded audio/video file is corrupted, empty, or unsupported."""
+    pass
+
+
+class SpeechToTextError(BrandProofAIException):
+    """Raised when Groq speech-to-text API fails or configuration is missing."""
+    pass

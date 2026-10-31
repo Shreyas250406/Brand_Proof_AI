@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: Optional[str] = None
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
 
+    # Groq Settings (Speech-to-Text)
+    GROQ_API_KEY: Optional[str] = None
+    GROQ_MODEL: str = "whisper-large-v3-turbo"
+    FFMPEG_BINARY: Optional[str] = None
+
     # S3-Compatible Image Storage Settings
     S3_ENDPOINT_URL: Optional[str] = None
     S3_REGION: Optional[str] = "us-east-1"

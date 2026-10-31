@@ -48,8 +48,10 @@ tests/
 - **Python:** 3.10+ (tested on Python 3.12)
 - **Framework:** FastAPI, Uvicorn, Pydantic v2
 - **LLM Engine:** Google Gemini (default: `gemini-2.5-flash`, ultra-low credit usage and high efficiency)
+- **Speech-to-Text:** Groq Whisper (`whisper-large-v3-turbo`)
 - **OCR Engine:** PaddleOCR 3.x with PaddlePaddle backend
-- **Image Processing:** Pillow, OpenCV
+- **Media Processing:** OpenCV, FFmpeg / `imageio-ffmpeg`
+- **PDF Report Generation:** ReportLab
 
 Install all dependencies:
 
@@ -78,6 +80,9 @@ cp .env.example .env
 | `AI_BASE_URL` | *(None)* | Optional custom endpoint |
 | `AI_TIMEOUT_SECONDS` | `30.0` | Timeout threshold for AI provider calls |
 | `AI_MAX_RETRIES` | `2` | Number of automatic retries on transient errors |
+| `GROQ_API_KEY` | *(None)* | Your Groq Cloud API key for Whisper speech transcription |
+| `GROQ_MODEL` | `whisper-large-v3-turbo` | Groq Whisper model ID |
+| `FFMPEG_BINARY` | *(Auto)* | Optional explicit path to FFmpeg binary |
 | `MAX_UPLOAD_SIZE_MB` | `10` | Maximum uploaded image size limit (in MB) |
 | `MAX_TEXT_LENGTH` | `50000` | Maximum input text character length |
 | `OCR_ENGINE` | `paddleocr` | OCR engine to use |
