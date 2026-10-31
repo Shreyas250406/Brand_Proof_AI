@@ -590,3 +590,155 @@ def extract_website_content(html: str, url: str) -> Dict[str, Any]:
     }
 
     return structure_website_content(raw_extracted)
+
+
+def discover_internal_links(base_url: str, html: str) -> List[str]:
+    """Discovers internal, same-domain links from an HTML document.
+
+    Filters out external domains, sensitive authentication/checkout paths,
+    non-HTML binary files, and duplicate links.
+    """
+    if not html or not base_url:
+        return []
+
+    parsed_base = urlparse(base_url)
+    base_netloc = parsed_base.netloc.lower()
+    if not base_netloc:
+        return []
+
+    # Extract all href attributes
+    raw_hrefs = re.findall(r'<a\s+(?:[^>]*?\s+)?href=["\']([^"\']+)["\']', html, re.IGNORECASE)
+
+    non_html_extensions = (
+        ".pdf", ".zip", ".tar", ".gz", ".png", ".jpg", ".jpeg",
+        ".gif", ".svg", ".css", ".js", ".mp4", ".mp3", ".wav",
+        ".avi", ".mov", ".exe", ".dmg", ".iso", ".xml", ".json",
+    )
+
+    discovered: List[str] = []
+    seen: Set[str] = set()
+
+    for href in raw_hrefs:
+        href_clean = href.strip()
+        if not href_clean:
+            continue
+
+        # Skip anchor links, mailto, tel, javascript, etc.
+        if href_clean.startswith(("#", "mailto:", "tel:", "javascript:", "data:")):
+            continue
+
+        # Resolve relative URL against base_url
+        full_url = urljoin(base_url, href_clean)
+        parsed = urlparse(full_url)
+
+        # Must be http or https
+        if parsed.scheme.lower() not in ("http", "https"):
+            continue
+
+        # Must be strictly the same domain
+        link_netloc = parsed.netloc.lower()
+        if link_netloc != base_netloc and link_netloc != f"www.{base_netloc}" and f"www.{link_netloc}" != base_netloc:
+            continue
+
+        # Check for non-HTML file extensions
+        path_lower = parsed.path.lower()
+        if any(path_lower.endswith(ext) for ext in non_html_extensions):
+            continue
+
+        # Check for sensitive path patterns (login, logout, admin, cart, etc.)
+        if any(re.search(pat, path_lower) for pat in SENSITIVE_PATH_PATTERNS):
+            continue
+
+        # Normalize URL (remove fragment, keep normalized path)
+        norm_path = parsed.path or "/"
+        normalized = urlunparse((
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            norm_path,
+            "",
+            parsed.query,
+            "",
+        ))
+
+        if normalized not in seen:
+            seen.add(normalized)
+            discovered.append(normalized)
+
+    return discovered
+
+
+def crawl_website(
+    start_url: str,
+    max_pages: int = 1,
+    max_depth: int = 2,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    check_dns: bool = True,
+    check_robots: bool = False,
+    session: Optional[requests.Session] = None,
+    fetch_fn: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Crawls a website starting at start_url with bounded page and depth limits.
+
+    Supports Mode A (single-page analysis when max_pages=1) and Mode B (limited
+    crawling when max_pages > 1).
+    """
+    valid, norm_start_url = validate_url(start_url, check_dns=check_dns)
+    if not valid:
+        return {
+            "start_url": start_url,
+            "pages_crawled": 0,
+            "pages": [],
+            "failed_urls": [{"url": start_url, "error": norm_start_url}],
+        }
+
+    fetcher = fetch_fn or (
+        lambda u: fetch_website(
+            u,
+            timeout=timeout,
+            check_dns=check_dns,
+            check_robots=check_robots,
+            session=session,
+        )
+    )
+
+    visited_urls: Set[str] = set()
+    queue: List[Tuple[str, int]] = [(norm_start_url, 0)]
+    pages: List[Dict[str, Any]] = []
+    failed_urls: List[Dict[str, str]] = []
+
+    limit = max(1, max_pages)
+
+    while queue and len(pages) < limit:
+        current_url, depth = queue.pop(0)
+
+        if current_url in visited_urls:
+            continue
+        visited_urls.add(current_url)
+
+        try:
+            success, content_or_err, final_url = fetcher(current_url)
+        except Exception as exc:
+            failed_urls.append({"url": current_url, "error": str(exc)})
+            continue
+
+        if not success:
+            failed_urls.append({"url": current_url, "error": content_or_err})
+            continue
+
+        # Extract structured content for this page
+        page_content = extract_website_content(content_or_err, final_url)
+        pages.append(page_content)
+
+        # If we can still crawl more pages and depth permits, discover internal links
+        if len(pages) < limit and depth < max_depth:
+            discovered = discover_internal_links(final_url, content_or_err)
+            for link in discovered:
+                if link not in visited_urls and not any(item[0] == link for item in queue):
+                    queue.append((link, depth + 1))
+
+    return {
+        "start_url": norm_start_url,
+        "pages_crawled": len(pages),
+        "pages": pages,
+        "failed_urls": failed_urls,
+    }
