@@ -306,6 +306,10 @@ def fetch_website(
         except Exception:
             html_text = raw_bytes.decode("utf-8", errors="replace")
 
+        return True, html_text, current_url
+
+    return False, f"Exceeded maximum redirects limit of {max_redirects}.", current_url
+
 class WebsiteContentExtractor(HTMLParser):
     """HTML Parser that extracts structured content, hierarchy, and metadata."""
 
@@ -337,6 +341,16 @@ class WebsiteContentExtractor(HTMLParser):
     def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]):
         attr_dict = {k.lower(): (v or "") for k, v in attrs}
         tag_lower = tag.lower()
+
+        # If currently in a heading and another block tag starts without closing the heading
+        if self._current_tag in ("h1", "h2", "h3") and tag_lower not in ("span", "b", "i", "strong", "em", "a"):
+            text = " ".join("".join(self._buffer).split()).strip()
+            if text:
+                self.headings.append({"level": self._current_tag, "text": text})
+                self.current_section_heading = text
+                self.current_section_level = self._current_tag
+            self._buffer = []
+
         self._current_tag = tag_lower
         self._current_attrs = attr_dict
 
@@ -465,7 +479,20 @@ class WebsiteContentExtractor(HTMLParser):
             self._buffer.append(data)
 
     def finalize(self):
-        """Closes the final open section if any."""
+        """Closes any unclosed tags and the final open section if any."""
+        if self._buffer:
+            text = " ".join("".join(self._buffer).split()).strip()
+            if text:
+                if self._current_tag in ("h1", "h2", "h3"):
+                    self.headings.append({"level": self._current_tag, "text": text})
+                    self.current_section_heading = text
+                elif self._current_tag == "p":
+                    self.paragraphs.append(text)
+                    self.current_section_paragraphs.append(text)
+                elif self._current_tag == "title" and not self.title:
+                    self.title = text
+            self._buffer = []
+
         if self.current_section_paragraphs:
             self.sections.append({
                 "heading": self.current_section_heading,
