@@ -203,3 +203,48 @@ def test_generate_report_pdf_endpoint(client: TestClient):
     assert response.content.startswith(b"%PDF")
     assert len(response.content) > 1000
 
+
+def test_analyze_media_endpoint_success(client: TestClient, monkeypatch):
+    """Verifies POST /api/v1/ai/analyze-media processes audio/video and returns MediaAnalysisResponse."""
+    import io
+    from app.api.schemas import (
+        MediaAnalysisResponse,
+        MediaAnalysisSummary,
+        GrammarFinding,
+    )
+
+    async def mock_analyze_media(**kwargs):
+        return MediaAnalysisResponse(
+            status="success",
+            media_type="audio",
+            duration=15.0,
+            original_text="We is excited to present Brand proof AI.",
+            corrected_text="We are excited to present BrandProof AI.",
+            findings=[
+                GrammarFinding(
+                    id="sp-1",
+                    category="grammar",
+                    severity="high",
+                    original_text="We is",
+                    suggestion="We are",
+                    explanation="Subject-verb agreement",
+                    timestamp="00:02",
+                    media_type="speech",
+                )
+            ],
+            summary=MediaAnalysisSummary(total_issues=1, grammar_issues=1),
+        )
+
+    monkeypatch.setattr("app.speech.analyze_media", mock_analyze_media)
+
+    fake_mp3 = b"ID3\x03\x00\x00\x00\x00\x00\x00" + b"\x00" * 200
+    files = {"file": ("test.mp3", io.BytesIO(fake_mp3), "audio/mpeg")}
+    response = client.post("/api/v1/ai/analyze-media", files=files)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["media_type"] == "audio"
+    assert len(data["findings"]) == 1
+    assert data["findings"][0]["timestamp"] == "00:02"
+
+

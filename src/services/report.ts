@@ -69,6 +69,7 @@ export async function downloadAnalysisReport(
       explanation: f.explanation || '',
       rule: f.rule || undefined,
       confidence: f.confidence || undefined,
+      timestamp: f.timestamp || undefined,
     })),
     summary: analysis.summary || null,
     content_type: analysis.sourceType || 'document',

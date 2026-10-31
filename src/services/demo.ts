@@ -302,6 +302,76 @@ export const demoAnalysisService: IAnalysisService = {
     const id = generateId();
     const now = new Date().toISOString();
 
+    if (sourceType === 'file_video' || sourceType === 'file_audio') {
+      const isVideo = sourceType === 'file_video';
+      const mediaFindings: Finding[] = [
+        {
+          id: generateId(),
+          category: 'brand_voice',
+          severity: 'critical',
+          originalExcerpt: 'Brand proof AI',
+          suggestedCorrection: 'BrandProof AI',
+          explanation: 'Official brand name must be written in camelCase without spaces.',
+          rule: 'Brand Guidelines: Typography & Capitalization',
+          confidence: 0.98,
+          timestamp: '00:04',
+          mediaType: 'speech',
+          isDemo: true,
+        },
+        {
+          id: generateId(),
+          category: 'grammar',
+          severity: 'major',
+          originalExcerpt: 'Its the most effective',
+          suggestedCorrection: "It's the most effective",
+          explanation: "Use contraction 'It's' for 'It is' rather than possessive pronoun 'Its'.",
+          rule: 'Grammar: Contractions',
+          confidence: 0.95,
+          timestamp: '00:12',
+          mediaType: 'speech',
+          isDemo: true,
+        },
+      ];
+      if (isVideo) {
+        mediaFindings.push({
+          id: generateId(),
+          category: 'spelling',
+          severity: 'major',
+          originalExcerpt: 'MULTIMODEL SOLUTION',
+          suggestedCorrection: 'MULTIMODAL SOLUTION',
+          explanation: "On-screen header contains typo: 'MULTIMODEL' should be 'MULTIMODAL'.",
+          rule: 'Spelling: Technical Terminology',
+          confidence: 0.94,
+          timestamp: '00:21',
+          mediaType: 'visual',
+          isDemo: true,
+        });
+      }
+      return {
+        id,
+        name: fileName || (isVideo ? 'Video Analysis' : 'Speech Analysis'),
+        sourceType,
+        originalContent: isVideo
+          ? '[Audio Transcript]\nWelcome to Brand proof AI. Its the most effective solution.\n\n[On-Screen Visual Text]\n00:00 - BrandProof AI\n00:21 - MULTIMODEL SOLUTION'
+          : 'Welcome to Brand proof AI. Its the most effective solution for real-time brand auditing.',
+        fileName,
+        contentType,
+        targetAudience,
+        language,
+        writingInstructions,
+        status: 'completed',
+        findings: mediaFindings,
+        selectedFindingIds: [],
+        reviewStatus: 'not_started',
+        correctedContent: isVideo
+          ? "[Audio Transcript]\nWelcome to BrandProof AI. It's the most effective solution.\n\n[On-Screen Visual Text]\n00:00 - BrandProof AI\n00:21 - MULTIMODAL SOLUTION"
+          : "Welcome to BrandProof AI. It's the most effective solution for real-time brand auditing.",
+        isDemo: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
+
     const trimmedContent = content.trim();
     const findings =
       trimmedContent.length < 20
@@ -414,18 +484,13 @@ import { brandStorage } from './persistence';
 
 const DEFAULT_BRAND_PROFILE: BrandProfile = {
   id: 'default',
-  name: 'My Brand',
-  description: 'Enter a brief description of your brand and what it stands for.',
-  voiceAndTone: 'Professional, clear, and approachable. We communicate with confidence and warmth.',
-  targetAudience: 'Business professionals and decision-makers in mid-market and enterprise organizations.',
-  preferredTerminology: ['email', 'use', 'build', 'customer'],
-  prohibitedPhrases: ['leverage', 'synergy', 'disruptive', 'paradigm shift'],
-  writingRules: [
-    'Use active voice wherever possible.',
-    'Keep sentences under 25 words.',
-    'Avoid jargon and corporate buzzwords.',
-    'Use plain, direct language.',
-  ],
+  name: '',
+  description: '',
+  voiceAndTone: '',
+  targetAudience: '',
+  preferredTerminology: [],
+  prohibitedPhrases: [],
+  writingRules: [],
   brandInstructions: '',
   guidelineNotes: '',
   createdAt: new Date().toISOString(),
@@ -434,7 +499,17 @@ const DEFAULT_BRAND_PROFILE: BrandProfile = {
 
 export const demoBrandService: IBrandService = {
   async get(): Promise<BrandProfile | null> {
-    return brandStorage.get() ?? DEFAULT_BRAND_PROFILE;
+    const stored = brandStorage.get();
+    if (!stored) return DEFAULT_BRAND_PROFILE;
+
+    // Clear legacy placeholder dummy text from existing localStorage values
+    return {
+      ...stored,
+      name: stored.name === 'My Brand' ? '' : (stored.name ?? ''),
+      description: stored.description === 'Enter a brief description of your brand and what it stands for.' ? '' : (stored.description ?? ''),
+      voiceAndTone: stored.voiceAndTone === 'Professional, clear, and approachable. We communicate with confidence and warmth.' ? '' : (stored.voiceAndTone ?? ''),
+      targetAudience: stored.targetAudience === 'Business professionals and decision-makers in mid-market and enterprise organizations.' ? '' : (stored.targetAudience ?? ''),
+    };
   },
 
   async save(profile: BrandProfile): Promise<void> {

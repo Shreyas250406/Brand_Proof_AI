@@ -23,6 +23,7 @@ import {
   ChevronUp,
   Filter,
   X,
+  Clock,
 } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import type {
@@ -711,6 +712,17 @@ function FindingCard({ finding, selected, expanded, onToggleSelect, onToggleExpa
           <div className="flex items-center gap-2 flex-wrap mb-2">
             <SeverityBadge severity={finding.severity} />
             <CategoryBadge category={finding.category} />
+            {finding.timestamp && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-amber-50 text-amber-700 border border-amber-200" title="Timestamp in media">
+                <Clock className="w-3 h-3 text-amber-600" />
+                {finding.timestamp}
+              </span>
+            )}
+            {finding.mediaType && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-surface-100 text-surface-600 border border-surface-200">
+                {finding.mediaType === 'speech' ? '🎙️ Speech' : (finding.mediaType === 'visual' ? '📺 Visual' : '🔄 Alignment')}
+              </span>
+            )}
             {hasConflict && (
               <span className="badge-minor">Review manually</span>
             )}

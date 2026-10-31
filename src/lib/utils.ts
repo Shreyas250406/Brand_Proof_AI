@@ -211,6 +211,7 @@ export function getSourceTypeLabel(type: SourceType): string {
     file_word: 'Word Doc',
     file_image: 'Image',
     file_video: 'Video',
+    file_audio: 'Audio / Speech',
     url: 'URL',
   };
   return map[type];

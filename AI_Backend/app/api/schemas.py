@@ -72,6 +72,14 @@ class GrammarFinding(BaseModel):
         default=None,
         description="Zero-based end character offset in original text if determinable.",
     )
+    timestamp: Optional[str] = Field(
+        default=None,
+        description="Timestamp MM:SS where the issue occurs in media.",
+    )
+    media_type: Optional[str] = Field(
+        default=None,
+        description="Media source modality: 'speech', 'visual', or 'combined'.",
+    )
 
 
 class AnalysisSummary(BaseModel):
@@ -282,6 +290,7 @@ class ReportFindingInput(BaseModel):
     explanation: str
     rule: Optional[str] = None
     confidence: Optional[float] = None
+    timestamp: Optional[str] = None
 
 
 class ReportGenerationRequest(BaseModel):
@@ -303,6 +312,8 @@ class ReportGenerationRequest(BaseModel):
 
 class SpeechFinding(BaseModel):
     """Grammar or style finding detected within speech transcription."""
+    id: Optional[str] = None
+    timestamp: Optional[str] = "00:00"
     original_excerpt: str
     suggested_correction: str
     category: str
@@ -371,13 +382,14 @@ class MediaAnalysisResponse(BaseModel):
     status: str = "success"
     media_type: str
     duration: float = 0.0
+    original_text: str = ""
+    corrected_text: str = ""
+    findings: List[GrammarFinding] = Field(default_factory=list)
     transcription: TranscriptionAnalysis = Field(default_factory=TranscriptionAnalysis)
     visual_text: VisualTextAnalysis = Field(default_factory=VisualTextAnalysis)
     combined_analysis: CombinedAnalysis = Field(default_factory=CombinedAnalysis)
     summary: MediaAnalysisSummary = Field(default_factory=MediaAnalysisSummary)
     id: Optional[str] = None
     created_at: Optional[str] = None
-
     model_name: Optional[str] = "Gemini 3.5 Flash"
-    created_at: Optional[str] = None
 

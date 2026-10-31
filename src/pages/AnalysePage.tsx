@@ -17,6 +17,10 @@ import {
   FilePlus,
   Type,
   Paperclip,
+  Mic,
+  Volume2,
+  Clock,
+  Sparkles,
 } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import type { SourceType, BrandProfile } from '@/types/domain';
@@ -74,7 +78,14 @@ export function AnalysePage() {
   const { setCurrentAnalysis, addToast } = useApp();
 
   // Input mode
-  const [activeTab, setActiveTab] = useState<'text' | 'file'>('text');
+  const [activeTab, setActiveTab] = useState<'text' | 'file' | 'media'>('text');
+
+  // Media input (Speech & Video)
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+  const [isMediaDragOver, setIsMediaDragOver] = useState(false);
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string | null>(null);
+  const mediaInputRef = useRef<HTMLInputElement>(null);
 
   // Text input
   const [text, setText] = useState('');
@@ -114,6 +125,17 @@ export function AnalysePage() {
       if (text.trim().length < 10) return { content: '', sourceType: 'text', valid: false, error: 'Content is too short. Please provide at least 10 characters.' };
       return { content: text, sourceType: 'text', valid: true, error: null };
     }
+    if (activeTab === 'media') {
+      if (!mediaFile) return { content: '', sourceType: 'file_audio', valid: false, error: 'Please select an audio (MP3) or video (MP4) file to analyse.' };
+      const ext = getFileExtension(mediaFile.name).toLowerCase();
+      const isVideo = ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext) || mediaFile.type.startsWith('video/');
+      return {
+        content: `[Media Analysis: ${mediaFile.name}]`,
+        sourceType: isVideo ? 'file_video' : 'file_audio',
+        valid: true,
+        error: null,
+      };
+    }
     if (!file) return { content: '', sourceType: 'file_text', valid: false, error: 'Please select a file to analyse.' };
 
     const ext = getFileExtension(file.name);
@@ -137,6 +159,60 @@ export function AnalysePage() {
   // -----------------------------------------------------------
   // File handling
   // -----------------------------------------------------------
+
+  function handleMediaFile(selectedFile: File) {
+    setMediaError(null);
+    if (selectedFile.size > 100 * 1024 * 1024) {
+      setMediaError(`File too large (${formatFileSize(selectedFile.size)}). Maximum media size is 100 MB.`);
+      return;
+    }
+
+    const ext = getFileExtension(selectedFile.name).toLowerCase();
+    const isSupportedAudio = ['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac'].includes(ext) || selectedFile.type.startsWith('audio/');
+    const isSupportedVideo = ['mp4', 'mov', 'avi', 'webm', 'mkv'].includes(ext) || selectedFile.type.startsWith('video/');
+
+    if (!isSupportedAudio && !isSupportedVideo) {
+      setMediaError(`Unsupported media type: .${ext}. Supported: MP3, MP4, WAV, M4A, WEBM, MOV.`);
+      return;
+    }
+
+    setMediaFile(selectedFile);
+    try {
+      if (mediaPreviewUrl) URL.revokeObjectURL(mediaPreviewUrl);
+      setMediaPreviewUrl(URL.createObjectURL(selectedFile));
+    } catch {
+      // Ignore preview failure
+    }
+  }
+
+  function handleMediaInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files?.[0];
+    if (selected) handleMediaFile(selected);
+    e.target.value = '';
+  }
+
+  function handleMediaDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsMediaDragOver(false);
+    const dropped = e.dataTransfer.files[0];
+    if (dropped) handleMediaFile(dropped);
+  }
+
+  const handleMediaDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsMediaDragOver(true);
+  }, []);
+
+  const handleMediaDragLeave = useCallback(() => setIsMediaDragOver(false), []);
+
+  function loadSampleMedia(type: 'audio' | 'video') {
+    const isVid = type === 'video';
+    const fakeContent = new Blob([new Uint8Array([0x00, 0x01, 0x02, 0x03])], { type: isVid ? 'video/mp4' : 'audio/mpeg' });
+    const sampleFile = new File([fakeContent], isVid ? 'brand_product_launch.mp4' : 'keynote_speech.mp3', {
+      type: isVid ? 'video/mp4' : 'audio/mpeg',
+    });
+    handleMediaFile(sampleFile);
+  }
 
   function handleFile(selectedFile: File) {
     setFileError(null);
@@ -205,12 +281,13 @@ export function AnalysePage() {
     setIsAnalysing(true);
 
     try {
+      const targetFile = activeTab === 'media' ? mediaFile : file;
       const analysis = await analysisService.analyze({
         content,
         sourceType,
-        fileName: file?.name,
-        file: file || undefined,
-        contentType: contentType || undefined,
+        fileName: targetFile?.name,
+        file: targetFile || undefined,
+        contentType: contentType || (activeTab === 'media' ? (sourceType === 'file_video' ? 'Video Presentation' : 'Speech / Audio') : undefined),
         targetAudience: targetAudience || undefined,
         language: language || undefined,
         writingInstructions: writingInstructions || undefined,
@@ -237,6 +314,10 @@ export function AnalysePage() {
     setFile(null);
     setFileError(null);
     setFileTextContent(null);
+    setMediaFile(null);
+    setMediaError(null);
+    if (mediaPreviewUrl) URL.revokeObjectURL(mediaPreviewUrl);
+    setMediaPreviewUrl(null);
     setValidationError(null);
   }
 
@@ -244,7 +325,7 @@ export function AnalysePage() {
   // Render
   // -----------------------------------------------------------
 
-  const hasContent = activeTab === 'text' ? text.trim().length > 0 : file !== null;
+  const hasContent = activeTab === 'text' ? text.trim().length > 0 : (activeTab === 'media' ? mediaFile !== null : file !== null);
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
@@ -290,7 +371,19 @@ export function AnalysePage() {
               )}
             >
               <Paperclip className="w-4 h-4" />
-              File Upload
+              Documents & Images
+            </Tabs.Trigger>
+            <Tabs.Trigger
+              value="media"
+              className={cn(
+                'flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors',
+                activeTab === 'media'
+                  ? 'border-brand-500 text-brand-600 bg-white'
+                  : 'border-transparent text-surface-500 hover:text-surface-700'
+              )}
+            >
+              <Video className="w-4 h-4 text-brand-600" />
+              Speech & Video
             </Tabs.Trigger>
           </Tabs.List>
 
@@ -404,6 +497,141 @@ export function AnalysePage() {
                   <p className="font-medium">Video analysis requires backend integration</p>
                   <p className="text-xs mt-0.5">Transcription, subtitle extraction and on-screen OCR will be available once the backend is connected. This demo records the upload and runs the workflow.</p>
                 </div>
+              </div>
+            )}
+          </Tabs.Content>
+
+          {/* Speech & Video Tab */}
+          <Tabs.Content value="media" className="p-5">
+            {!mediaFile ? (
+              <div
+                onDrop={handleMediaDrop}
+                onDragOver={handleMediaDragOver}
+                onDragLeave={handleMediaDragLeave}
+                onClick={() => mediaInputRef.current?.click()}
+                className={cn(
+                  'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors',
+                  isMediaDragOver
+                    ? 'border-brand-400 bg-brand-50'
+                    : 'border-surface-200 hover:border-brand-300 hover:bg-surface-50'
+                )}
+                role="button"
+                tabIndex={0}
+                aria-label="Upload speech or video file"
+                onKeyDown={e => e.key === 'Enter' && mediaInputRef.current?.click()}
+              >
+                <input
+                  ref={mediaInputRef}
+                  type="file"
+                  className="sr-only"
+                  onChange={handleMediaInput}
+                  accept=".mp3,.mp4,.wav,.m4a,.webm,.mov,.avi,.mkv,audio/*,video/*"
+                  aria-label="Select audio or video file"
+                />
+                <div className="flex items-center justify-center gap-3 mb-3">
+                  <div className="p-3 bg-brand-50 rounded-full text-brand-600">
+                    <Mic className="w-6 h-6" />
+                  </div>
+                  <div className="p-3 bg-purple-50 rounded-full text-purple-600">
+                    <Video className="w-6 h-6" />
+                  </div>
+                </div>
+                <p className="text-sm font-medium text-surface-800">
+                  Drop an audio or video file here, or <span className="text-brand-600">browse</span>
+                </p>
+                <p className="text-xs text-surface-400 mt-1.5">
+                  Audio: <b>.mp3, .wav, .m4a</b> · Video: <b>.mp4, .mov, .webm</b> (up to 100 MB)
+                </p>
+                <div className="mt-4 flex items-center justify-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => loadSampleMedia('audio')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-100 hover:bg-surface-200 text-surface-700 transition-colors"
+                  >
+                    <Volume2 className="w-3.5 h-3.5 text-brand-600" />
+                    Load sample speech (MP3)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => loadSampleMedia('video')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-100 hover:bg-surface-200 text-surface-700 transition-colors"
+                  >
+                    <Video className="w-3.5 h-3.5 text-purple-600" />
+                    Load sample video (MP4)
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="card p-4 space-y-3 bg-surface-50 border border-surface-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-brand-100 text-brand-700 rounded-lg">
+                      {mediaFile.name.toLowerCase().endsWith('.mp4') || mediaFile.type.startsWith('video/') ? (
+                        <Video className="w-5 h-5" />
+                      ) : (
+                        <Volume2 className="w-5 h-5" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-surface-900 truncate max-w-sm">{mediaFile.name}</p>
+                      <p className="text-xs text-surface-400">{formatFileSize(mediaFile.size)} · {mediaFile.type || 'Media File'}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setMediaFile(null);
+                      setMediaError(null);
+                      if (mediaPreviewUrl) URL.revokeObjectURL(mediaPreviewUrl);
+                      setMediaPreviewUrl(null);
+                    }}
+                    className="btn-ghost p-1.5 text-surface-400 hover:text-surface-700"
+                    aria-label="Remove media"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Media Preview Player */}
+                {mediaPreviewUrl && (
+                  <div className="mt-2 rounded-lg overflow-hidden bg-black/5 p-2">
+                    {mediaFile.name.toLowerCase().endsWith('.mp4') || mediaFile.type.startsWith('video/') ? (
+                      <video
+                        controls
+                        src={mediaPreviewUrl}
+                        className="w-full max-h-[220px] rounded bg-black"
+                      />
+                    ) : (
+                      <audio
+                        controls
+                        src={mediaPreviewUrl}
+                        className="w-full mt-1"
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* Pipeline Feature Badges */}
+                <div className="pt-2 border-t border-surface-200/60 flex items-center gap-2 flex-wrap text-xs text-surface-600">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-200">
+                    <Sparkles className="w-3 h-3 text-brand-600" />
+                    Groq Whisper STT
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                    <Video className="w-3 h-3 text-purple-600" />
+                    1 FPS PaddleOCR
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                    <Clock className="w-3 h-3 text-amber-600" />
+                    Second-by-Second Error Timestamps
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {mediaError && (
+              <div className="mt-3 flex items-start gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{mediaError}</span>
               </div>
             )}
           </Tabs.Content>

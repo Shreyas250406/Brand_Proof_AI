@@ -62,6 +62,11 @@ function mapBackendCategory(cat: string): FindingCategory {
 export const liveAnalysisService: IAnalysisService = {
   async analyze(request: AnalysisRequest): Promise<Analysis> {
     const isImage = !!request.file && request.file.type.startsWith('image/');
+    const isMedia = !!request.file && (
+      request.file.type.startsWith('video/') ||
+      request.file.type.startsWith('audio/') ||
+      /\.(mp3|mp4|wav|m4a|webm|mov|ogg)$/i.test(request.file.name)
+    );
 
     let backendData: {
       id?: string;
@@ -77,15 +82,41 @@ export const liveAnalysisService: IAnalysisService = {
         confidence?: number;
         start_offset?: number;
         end_offset?: number;
+        timestamp?: string;
+        media_type?: string;
       }>;
       summary: {
-        assessment: string;
+        assessment?: string;
         total_findings?: number;
       };
       created_at?: string;
     };
 
-    if (isImage && request.file) {
+    if (isMedia && request.file) {
+      const formData = new FormData();
+      formData.append('file', request.file);
+      if (request.language) formData.append('language', request.language);
+      if (request.contentType) formData.append('content_type', request.contentType);
+      if (request.targetAudience) formData.append('target_audience', request.targetAudience);
+      if (request.specialInstructions) formData.append('instructions', request.specialInstructions);
+      if (request.brandGuidelines) formData.append('brand_context', request.brandGuidelines);
+
+      const token = authService.getToken();
+      const headers: HeadersInit = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}/analyze-media`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail?.message || err.message || 'Speech & Video analysis failed.');
+      }
+      backendData = await res.json();
+    } else if (isImage && request.file) {
       const formData = new FormData();
       formData.append('file', request.file);
       if (request.language) formData.append('language', request.language);
@@ -140,6 +171,8 @@ export const liveAnalysisService: IAnalysisService = {
       suggestedCorrection: f.suggestion,
       explanation: f.explanation,
       confidence: f.confidence,
+      timestamp: f.timestamp || undefined,
+      mediaType: (f.media_type as 'speech' | 'visual' | 'combined' | 'text') || undefined,
       sourceOffset:
         f.start_offset !== undefined && f.end_offset !== undefined
           ? { start: f.start_offset, end: f.end_offset }
@@ -245,6 +278,8 @@ export const liveHistoryService: IHistoryService & {
       suggestedCorrection: (f.suggestion as string) || '',
       explanation: (f.explanation as string) || '',
       confidence: f.confidence as number | undefined,
+      timestamp: (f.timestamp as string) || undefined,
+      mediaType: (f.media_type as 'speech' | 'visual' | 'combined' | 'text') || undefined,
       sourceOffset:
         f.start_offset !== undefined && f.end_offset !== undefined
           ? { start: Number(f.start_offset), end: Number(f.end_offset) }

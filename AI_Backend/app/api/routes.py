@@ -26,6 +26,7 @@ from app.api.schemas import (
     GrammarFinding,
     AnalysisSummary,
     ReportGenerationRequest,
+    MediaAnalysisResponse,
 )
 from app.core.config import settings
 from app.core.exceptions import (
@@ -42,6 +43,9 @@ from app.core.exceptions import (
     StorageUploadError,
     DatabaseError,
     AuthenticationError,
+    InvalidMediaError,
+    SpeechToTextError,
+    MediaProcessingError,
 )
 from app.services.text_processor import text_processor_service
 from app.services.ai_provider import ai_provider_service
@@ -947,6 +951,83 @@ async def download_analysis_report(id: str, authorization: Optional[str] = Heade
 # ------------------------------------------------------------------------------
 # System Health Endpoint
 # ------------------------------------------------------------------------------
+
+
+@router.post(
+    "/analyze-media",
+    response_model=MediaAnalysisResponse,
+    summary="Analyze audio (MP3) or video (MP4) content",
+    description="Extracts speech via Groq Whisper STT and visible on-screen text via OCR, proofreads with Gemini, provides exact timestamps for errors, and returns structured findings.",
+    responses={
+        200: {"description": "Media successfully analyzed with timestamps"},
+        400: {"model": ErrorResponse, "description": "Invalid media file format or corrupted file"},
+        413: {"model": ErrorResponse, "description": "Uploaded file exceeds maximum size limit"},
+        415: {"model": ErrorResponse, "description": "Unsupported media format"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+        500: {"model": ErrorResponse, "description": "Internal processing error"},
+    },
+)
+async def analyze_media_endpoint(
+    file: UploadFile = File(..., description="Audio (MP3) or Video (MP4) file"),
+    content_type: Optional[str] = Form(None),
+    target_audience: Optional[str] = Form(None),
+    instructions: Optional[str] = Form(None),
+    brand_context: Optional[str] = Form(None),
+    language: Optional[str] = Form("English"),
+    authorization: Optional[str] = Header(None),
+):
+    """Analyzes multimedia file (MP3/MP4) for speech, visual text, and consistency."""
+    user = await get_current_user_optional(authorization)
+    user_id = user.get("id") if user else None
+
+    fn = file.filename or "media_upload"
+    ext = fn.split(".")[-1].lower() if "." in fn else ""
+    allowed_audio = {"mp3", "wav", "m4a", "ogg", "flac", "aac"}
+    allowed_video = {"mp4", "mov", "avi", "webm", "mkv"}
+    if ext not in allowed_audio and ext not in allowed_video:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail={"error_type": "UnsupportedMediaError", "message": f"Unsupported media format '.{ext}'. Supported formats: MP3, MP4, WAV, M4A, WEBM, MOV."},
+        )
+
+    file_bytes = await file.read()
+    if len(file_bytes) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error_type": "InvalidMediaError", "message": "Uploaded media file is empty (0 bytes)."},
+        )
+    if len(file_bytes) > 100 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={"error_type": "PayloadTooLargeError", "message": "Media file exceeds maximum allowed limit (100MB)."},
+        )
+
+    try:
+        from app.speech import analyze_media
+        result = await analyze_media(
+            file_bytes=file_bytes,
+            filename=fn,
+            content_type=content_type,
+            target_audience=target_audience,
+            instructions=instructions,
+            brand_context=brand_context,
+            language=language,
+            user_id=user_id,
+            save_history=True,
+        )
+        return result
+    except InvalidMediaError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"error_type": "InvalidMediaError", "message": exc.message})
+    except SpeechToTextError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail={"error_type": "SpeechToTextError", "message": exc.message})
+    except MediaProcessingError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"error_type": "MediaProcessingError", "message": exc.message})
+    except AIRateLimitError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail={"error_type": "AIRateLimitError", "message": exc.message})
+    except Exception as exc:
+        logger.error("Unhandled media analysis error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"error_type": "InternalServerError", "message": f"Media analysis failed: {str(exc)}"})
+
 
 @router.get(
     "/health",

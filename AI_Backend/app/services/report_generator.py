@@ -359,9 +359,11 @@ class ReportGeneratorService:
                 sev_color = "#DC2626" if "high" in sev_raw else ("#D97706" if "med" in sev_raw else "#2563EB")
                 explanation = str(item.get("explanation") or "").strip()
 
+                ts_val = item.get("timestamp")
+                ts_badge = f' <font color="#475569" size="7"><b>[{html.escape(str(ts_val))}]</b></font>' if ts_val else ""
                 issues_table_data.append([
                     Paragraph(f"<b>[{idx}]</b>", self.styles["TableCell"]),
-                    Paragraph(f'<font color="#DC2626"><u><b>{html.escape(orig_snippet)}</b></u></font>', self.styles["TableCell"]),
+                    Paragraph(f'<font color="#DC2626"><u><b>{html.escape(orig_snippet)}</b></u></font>{ts_badge}', self.styles["TableCell"]),
                     Paragraph(html.escape(cat_label), self.styles["TableCell"]),
                     Paragraph(f'<font color="{sev_color}"><b>{sev_raw.upper()}</b></font>', self.styles["TableCell"]),
                     Paragraph(html.escape(explanation), self.styles["TableCell"]),
@@ -469,9 +471,11 @@ class ReportGeneratorService:
                 rule_name = str(item.get("rule") or f"Brand {cat_label} Standard")
                 explanation = str(item.get("explanation") or "").strip()
 
+                ts_val = item.get("timestamp")
+                ts_badge = f'<br/><font color="#64748B" size="7">Time: {html.escape(str(ts_val))}</font>' if ts_val else ""
                 proofs_table_data.append([
                     Paragraph(f"<b>[{idx}]</b>", self.styles["TableCell"]),
-                    Paragraph(f'<font color="#DC2626"><s>{html.escape(orig_snippet)}</s></font>', self.styles["TableCell"]),
+                    Paragraph(f'<font color="#DC2626"><s>{html.escape(orig_snippet)}</s></font>{ts_badge}', self.styles["TableCell"]),
                     Paragraph(f'<font color="#15803D"><b>{html.escape(suggestion)}</b></font>', self.styles["TableCell"]),
                     Paragraph(f'<b>{html.escape(rule_name)}</b>', self.styles["TableCell"]),
                     Paragraph(html.escape(explanation), self.styles["TableCell"]),

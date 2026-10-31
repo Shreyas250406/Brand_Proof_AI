@@ -33,6 +33,7 @@ export type SourceType =
   | 'file_word'
   | 'file_image'
   | 'file_video'
+  | 'file_audio'
   | 'url';
 
 export type AnalysisStatus =
@@ -79,6 +80,8 @@ export interface Finding {
   rule?: string;
   confidence?: number; // 0–1, only if provided by the analysis service
   sourceOffset?: SourceOffset; // Only include if the backend provides reliable offsets
+  timestamp?: string; // e.g. "00:15" where the error occurs in media
+  mediaType?: 'speech' | 'visual' | 'combined' | 'text';
   isDemo: boolean;
 }
 
