@@ -29,6 +29,10 @@ interface AppContextValue {
   setCurrentAnalysis: (analysis: Analysis | null) => void;
   updateCurrentAnalysis: (updates: Partial<Analysis>) => void;
 
+  // History versioning for reactive UI updates
+  historyVersion: number;
+  triggerHistoryRefresh: () => void;
+
   // Feedback for current analysis
   feedbackMap: Record<string, FindingFeedback>;
   setFeedbackForFinding: (findingId: string, feedback: FindingFeedback) => void;
@@ -46,24 +50,58 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
+const SESSION_ANALYSIS_KEY = 'brandproof_current_analysis';
+
+function loadStoredAnalysis(): Analysis | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_ANALYSIS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 // -----------------------------------------------------------
 // Provider
 // -----------------------------------------------------------
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [currentAnalysis, setCurrentAnalysisState] = useState<Analysis | null>(null);
+  const [currentAnalysis, setCurrentAnalysisState] = useState<Analysis | null>(loadStoredAnalysis);
+  const [historyVersion, setHistoryVersion] = useState<number>(0);
   const [feedbackMap, setFeedbackMap] = useState<Record<string, FindingFeedback>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const toastCounter = useRef(0);
 
+  const triggerHistoryRefresh = useCallback(() => {
+    setHistoryVersion(v => v + 1);
+  }, []);
+
   const setCurrentAnalysis = useCallback((analysis: Analysis | null) => {
     setCurrentAnalysisState(analysis);
     setFeedbackMap({});
+    try {
+      if (analysis) {
+        sessionStorage.setItem(SESSION_ANALYSIS_KEY, JSON.stringify(analysis));
+      } else {
+        sessionStorage.removeItem(SESSION_ANALYSIS_KEY);
+      }
+    } catch {
+      // Ignore quota error
+    }
   }, []);
 
   const updateCurrentAnalysis = useCallback((updates: Partial<Analysis>) => {
-    setCurrentAnalysisState(prev => prev ? { ...prev, ...updates, updatedAt: new Date().toISOString() } : null);
+    setCurrentAnalysisState(prev => {
+      if (!prev) return null;
+      const next = { ...prev, ...updates, updatedAt: new Date().toISOString() };
+      try {
+        sessionStorage.setItem(SESSION_ANALYSIS_KEY, JSON.stringify(next));
+      } catch {
+        // Ignore quota error
+      }
+      return next;
+    });
   }, []);
 
   const setFeedbackForFinding = useCallback((findingId: string, feedback: FindingFeedback) => {
@@ -93,6 +131,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       currentAnalysis,
       setCurrentAnalysis,
       updateCurrentAnalysis,
+      historyVersion,
+      triggerHistoryRefresh,
       feedbackMap,
       setFeedbackForFinding,
       clearFeedback,

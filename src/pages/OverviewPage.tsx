@@ -30,16 +30,22 @@ import { cn } from '@/lib/utils';
 
 export function OverviewPage() {
   const navigate = useNavigate();
-  const { setCurrentAnalysis } = useApp();
+  const { setCurrentAnalysis, historyVersion } = useApp();
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
     historyService.list().then(data => {
-      setAnalyses(data);
-      setLoading(false);
+      if (isMounted) {
+        setAnalyses(data);
+        setLoading(false);
+      }
     });
-  }, []);
+    return () => {
+      isMounted = false;
+    };
+  }, [historyVersion]);
 
   const completedAnalyses = analyses.filter(a => a.status === 'completed' || a.status === 'no_findings');
   const recentAnalyses = analyses.slice(0, 5);

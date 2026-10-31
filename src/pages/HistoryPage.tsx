@@ -34,7 +34,7 @@ const REVIEW_STATUS_OPTIONS: ReviewStatus[] = ['not_started', 'in_progress', 'co
 
 export function HistoryPage() {
   const navigate = useNavigate();
-  const { setCurrentAnalysis, addToast } = useApp();
+  const { setCurrentAnalysis, addToast, historyVersion, triggerHistoryRefresh } = useApp();
 
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,7 +57,7 @@ export function HistoryPage() {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadHistory(); }, []);
+  useEffect(() => { loadHistory(); }, [historyVersion]);
 
   // Filter and sort
   const filteredAnalyses = useMemo(() => {
@@ -98,16 +98,28 @@ export function HistoryPage() {
   }
 
   async function handleDelete(id: string) {
-    await historyService.delete(id);
-    setAnalyses(prev => prev.filter(a => a.id !== id));
-    addToast({ title: 'Analysis deleted', variant: 'success' });
-    setDeleteId(null);
+    try {
+      await historyService.delete(id);
+      triggerHistoryRefresh();
+      setAnalyses(prev => prev.filter(a => a.id !== id));
+      addToast({ title: 'Analysis deleted', variant: 'success' });
+    } catch {
+      addToast({ title: 'Failed to delete analysis', variant: 'error' });
+    } finally {
+      setDeleteId(null);
+    }
   }
 
   async function handleClearAll() {
-    clearAllDemoData();
-    setAnalyses([]);
-    addToast({ title: 'All demo data cleared', variant: 'success' });
+    try {
+      await historyService.clear();
+      clearAllDemoData();
+      triggerHistoryRefresh();
+      setAnalyses([]);
+      addToast({ title: 'All analysis history cleared', variant: 'success' });
+    } catch {
+      addToast({ title: 'Failed to clear history', variant: 'error' });
+    }
   }
 
   const activeFiltersCount = filterStatuses.length + filterReviewStatuses.length;

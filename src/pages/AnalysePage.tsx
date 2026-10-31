@@ -71,7 +71,7 @@ Due to the fact that content quality matters, we've built a comprehensive soluti
 
 export function AnalysePage() {
   const navigate = useNavigate();
-  const { setCurrentAnalysis, addToast } = useApp();
+  const { setCurrentAnalysis, addToast, triggerHistoryRefresh } = useApp();
 
   // Input mode
   const [activeTab, setActiveTab] = useState<'text' | 'file'>('text');
@@ -218,11 +218,13 @@ export function AnalysePage() {
 
       await historyService.save(analysis);
       setCurrentAnalysis(analysis);
+      triggerHistoryRefresh();
       navigate('/review');
-    } catch {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred. Please try again.';
       addToast({
         title: 'Analysis failed',
-        description: 'An error occurred. Please try again.',
+        description: errorMessage,
         variant: 'error',
       });
     } finally {

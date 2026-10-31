@@ -62,7 +62,7 @@ const ALL_SEVERITIES: FindingSeverity[] = ['critical', 'major', 'minor', 'info']
 
 export function ReviewPage() {
   const navigate = useNavigate();
-  const { currentAnalysis, updateCurrentAnalysis, feedbackMap, setFeedbackForFinding, addToast } = useApp();
+  const { currentAnalysis, updateCurrentAnalysis, feedbackMap, setFeedbackForFinding, addToast, triggerHistoryRefresh } = useApp();
 
   // Correction state
   const [isApplying, setIsApplying] = useState(false);
@@ -181,6 +181,7 @@ export function ReviewPage() {
       };
       updateCurrentAnalysis(updated);
       await historyService.save({ ...currentAnalysis, ...updated } as import('@/types/domain').Analysis);
+      triggerHistoryRefresh();
 
       setActiveTab('corrected');
 
@@ -196,8 +197,9 @@ export function ReviewPage() {
           variant: 'success',
         });
       }
-    } catch {
-      addToast({ title: 'Failed to apply corrections', variant: 'error' });
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to apply corrections';
+      addToast({ title: 'Failed to apply corrections', description: errorMessage, variant: 'error' });
     } finally {
       setIsApplying(false);
     }
@@ -231,6 +233,7 @@ export function ReviewPage() {
     if (!editedContent || !currentAnalysis) return;
     updateCurrentAnalysis({ correctedContent: editedContent });
     await historyService.save({ ...currentAnalysis, correctedContent: editedContent } as import('@/types/domain').Analysis);
+    triggerHistoryRefresh();
     setCorrectedContent(editedContent);
     setIsEditing(false);
     addToast({ title: 'Changes saved', variant: 'success' });
