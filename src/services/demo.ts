@@ -454,7 +454,7 @@ import { liveAnalysisService, liveHistoryService } from './live';
 
 export const IS_DEMO_MODE = false; // Live AI & Supabase Database Mode
 
-export const analysisService: IAnalysisService = liveAnalysisService;
-export const historyService: IHistoryService = liveHistoryService;
+export const analysisService: IAnalysisService = IS_DEMO_MODE ? demoAnalysisService : liveAnalysisService;
+export const historyService: IHistoryService = IS_DEMO_MODE ? demoHistoryService : liveHistoryService;
 export const feedbackService: IFeedbackService = demoFeedbackService;
 export const brandService: IBrandService = demoBrandService;

@@ -107,9 +107,14 @@ export function HistoryPage() {
   }
 
   async function handleClearAll() {
-    clearAllDemoData();
-    setAnalyses([]);
-    addToast({ title: 'All demo data cleared', variant: 'success' });
+    try {
+      await historyService.clear();
+      clearAllDemoData();
+      setAnalyses([]);
+      addToast({ title: 'History cleared successfully', variant: 'success' });
+    } catch {
+      addToast({ title: 'Failed to clear history', variant: 'error' });
+    }
   }
 
   const activeFiltersCount = filterStatuses.length + filterReviewStatuses.length;

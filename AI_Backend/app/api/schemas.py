@@ -157,6 +157,13 @@ class AnalysisHistoryItem(BaseModel):
     image_metadata: Optional[ImageMetadataResponse] = None
 
 
+class UpdateHistoryRequest(BaseModel):
+    """Request schema for updating an existing analysis history item."""
+    corrected_text: Optional[str] = None
+    findings: Optional[List[Dict[str, Any]]] = None
+    summary: Optional[str] = None
+
+
 class HistoryListResponse(BaseModel):
     """Response schema for listing analysis history."""
     items: List[AnalysisHistoryItem]

@@ -21,6 +21,7 @@ from app.api.schemas import (
     UserSessionResponse,
     ImageMetadataResponse,
     AnalysisHistoryItem,
+    UpdateHistoryRequest,
     HistoryListResponse,
     GrammarFinding,
     AnalysisSummary,
@@ -268,10 +269,13 @@ async def analyze_text(
                     user_id=user_id,
                 )
                 result.id = history_record.get("id")
-                result.created_at = history_record.get("created_at")
+                result.created_at = str(history_record.get("created_at", ""))
             except Exception as db_exc:
                 logger.error("Failed to persist text analysis history: %s", db_exc)
-                # Text analysis should succeed even if database persistence experiences an issue
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail={"error_type": "DatabaseError", "message": f"Database persistence failed: {str(db_exc)}"},
+                )
 
         return result
 
@@ -730,9 +734,70 @@ async def get_history_item(
         findings=row.get("findings") or [],
         summary=row.get("summary"),
         model_name=row.get("model_name"),
-        created_at=row.get("created_at", ""),
+        created_at=str(row.get("created_at", "")),
         image_metadata=img_meta,
     )
+
+
+@router.patch(
+    "/history/{id}",
+    response_model=AnalysisHistoryItem,
+    summary="Update an analysis history record (e.g. corrected text, findings, review status)",
+)
+@router.put(
+    "/history/{id}",
+    response_model=AnalysisHistoryItem,
+    summary="Update an analysis history record",
+)
+async def update_history_item(
+    id: str,
+    request: UpdateHistoryRequest,
+    authorization: Optional[str] = Header(None),
+) -> AnalysisHistoryItem:
+    """Updates an existing analysis entry in Supabase analysis_history."""
+    if not supabase_service.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error_type": "DatabaseConfigError", "message": "Supabase database is not configured."},
+        )
+
+    user = await get_current_user_optional(authorization)
+    user_id = user["user_id"] if user else None
+
+    try:
+        updated = supabase_service.update_analysis_history(
+            analysis_id=id,
+            corrected_text=request.corrected_text,
+            findings=request.findings,
+            summary=request.summary,
+            user_id=user_id,
+        )
+        return AnalysisHistoryItem(
+            id=updated["id"],
+            user_id=updated.get("user_id"),
+            input_type=updated.get("input_type", "text"),
+            original_text=updated.get("original_text", ""),
+            corrected_text=updated.get("corrected_text", ""),
+            findings=updated.get("findings") if isinstance(updated.get("findings"), list) else [],
+            summary=updated.get("summary"),
+            model_name=updated.get("model_name"),
+            created_at=str(updated.get("created_at", "")),
+        )
+    except DatabaseError as exc:
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in str(exc).lower()
+            else status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        raise HTTPException(
+            status_code=status_code,
+            detail={"error_type": "DatabaseError", "message": str(exc)},
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error_type": "InternalServerError", "message": f"Update failed: {str(exc)}"},
+        )
 
 
 @router.delete(

@@ -52,7 +52,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
 
 export const DEMO_ADMIN_SESSION: AuthSession = {
   user: {
-    id: '00000000-0000-4000-a000-000000000001',
+    id: 'b71b91b7-3ac2-43e3-b73b-b719caedc4a3',
     email: 'admin@brandproof.ai',
     displayName: 'Brand Admin',
   },

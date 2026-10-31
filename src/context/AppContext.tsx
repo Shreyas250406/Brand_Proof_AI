@@ -50,8 +50,19 @@ const AppContext = createContext<AppContextValue | null>(null);
 // Provider
 // -----------------------------------------------------------
 
+const CURRENT_ANALYSIS_KEY = 'brandproof_active_analysis';
+
+function getStoredAnalysis(): Analysis | null {
+  try {
+    const raw = sessionStorage.getItem(CURRENT_ANALYSIS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [currentAnalysis, setCurrentAnalysisState] = useState<Analysis | null>(null);
+  const [currentAnalysis, setCurrentAnalysisState] = useState<Analysis | null>(getStoredAnalysis);
   const [feedbackMap, setFeedbackMap] = useState<Record<string, FindingFeedback>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -60,10 +71,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setCurrentAnalysis = useCallback((analysis: Analysis | null) => {
     setCurrentAnalysisState(analysis);
     setFeedbackMap({});
+    try {
+      if (analysis) {
+        sessionStorage.setItem(CURRENT_ANALYSIS_KEY, JSON.stringify(analysis));
+      } else {
+        sessionStorage.removeItem(CURRENT_ANALYSIS_KEY);
+      }
+    } catch {
+      // ignore
+    }
   }, []);
 
   const updateCurrentAnalysis = useCallback((updates: Partial<Analysis>) => {
-    setCurrentAnalysisState(prev => prev ? { ...prev, ...updates, updatedAt: new Date().toISOString() } : null);
+    setCurrentAnalysisState(prev => {
+      if (!prev) return null;
+      const updated = { ...prev, ...updates, updatedAt: new Date().toISOString() };
+      try {
+        sessionStorage.setItem(CURRENT_ANALYSIS_KEY, JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
   }, []);
 
   const setFeedbackForFinding = useCallback((findingId: string, feedback: FindingFeedback) => {

@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 _UNSET = object()
 
+DEMO_ADMIN_USER_ID = "b71b91b7-3ac2-43e3-b73b-b719caedc4a3"
+LEGACY_DEMO_ADMIN_ID = "00000000-0000-4000-a000-000000000001"
+
 
 class SupabaseService:
     """Provides methods for Supabase Auth, profiles, analysis history,
@@ -232,7 +235,7 @@ class SupabaseService:
         clean_email = email.strip().lower()
         if clean_email == "admin@brandproof.ai" and password == "BrandProof2026!":
             return {
-                "user_id": "00000000-0000-4000-a000-000000000001",
+                "user_id": DEMO_ADMIN_USER_ID,
                 "email": "admin@brandproof.ai",
                 "display_name": "Brand Admin",
                 "access_token": "brandproof_demo_admin_jwt_token",
@@ -362,7 +365,7 @@ class SupabaseService:
         # Instant verification for Brand Admin demo token
         if access_token == "brandproof_demo_admin_jwt_token":
             return {
-                "user_id": "00000000-0000-4000-a000-000000000001",
+                "user_id": DEMO_ADMIN_USER_ID,
                 "email": "admin@brandproof.ai",
                 "display_name": "Brand Admin",
             }
@@ -436,6 +439,9 @@ class SupabaseService:
         """Saves a completed analysis result to public.analysis_history."""
         client = self._get_client()
 
+        if user_id == LEGACY_DEMO_ADMIN_ID:
+            user_id = DEMO_ADMIN_USER_ID
+
         payload = {
             "input_type": input_type,
             "original_text": original_text,
@@ -470,7 +476,11 @@ class SupabaseService:
             table_obj = client.table("analysis_history") if hasattr(client, "table") else client.from_("analysis_history")
             query = table_obj.select("*")
             if user_id:
+                if user_id == LEGACY_DEMO_ADMIN_ID:
+                    user_id = DEMO_ADMIN_USER_ID
                 query = query.eq("user_id", user_id)
+            else:
+                query = query.is_("user_id", "null")
             query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
             response = query.execute()
             return response.data or []
@@ -485,6 +495,8 @@ class SupabaseService:
     ) -> Optional[Dict[str, Any]]:
         """Retrieves a single analysis record by UUID."""
         client = self._get_client()
+        if user_id == LEGACY_DEMO_ADMIN_ID:
+            user_id = DEMO_ADMIN_USER_ID
         try:
             table_obj = client.table("analysis_history") if hasattr(client, "table") else client.from_("analysis_history")
             query = table_obj.select("*").eq("id", analysis_id)
@@ -498,6 +510,46 @@ class SupabaseService:
             logger.error("Failed to get analysis %s: %s", analysis_id, exc)
             raise DatabaseError(f"Could not fetch analysis record: {str(exc)}")
 
+    def update_analysis_history(
+        self,
+        analysis_id: str,
+        corrected_text: Optional[str] = None,
+        findings: Optional[List[Dict[str, Any]]] = None,
+        summary: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Updates an existing analysis record in public.analysis_history."""
+        client = self._get_client()
+        if user_id == LEGACY_DEMO_ADMIN_ID:
+            user_id = DEMO_ADMIN_USER_ID
+
+        payload = {}
+        if corrected_text is not None:
+            payload["corrected_text"] = corrected_text
+        if findings is not None:
+            payload["findings"] = findings
+        if summary is not None:
+            payload["summary"] = summary
+
+        if not payload:
+            res = self.get_analysis_by_id(analysis_id, user_id=user_id)
+            if not res:
+                raise DatabaseError(f"Analysis {analysis_id} not found.")
+            return res
+
+        try:
+            table_obj = client.table("analysis_history") if hasattr(client, "table") else client.from_("analysis_history")
+            query = table_obj.update(payload).eq("id", analysis_id)
+            if user_id:
+                query = query.eq("user_id", user_id)
+            response = query.execute()
+            if not response.data or len(response.data) == 0:
+                raise DatabaseError(f"Analysis {analysis_id} not found or permission denied.")
+            return response.data[0]
+        except Exception as exc:
+            logger.error("Failed to update analysis history %s: %s", analysis_id, exc)
+            raise DatabaseError(f"Could not update analysis history: {str(exc)}")
+
     def delete_analysis(
         self,
         analysis_id: str,
@@ -508,6 +560,8 @@ class SupabaseService:
         Linked image_metadata rows are automatically cascade deleted.
         """
         client = self._get_client()
+        if user_id == LEGACY_DEMO_ADMIN_ID:
+            user_id = DEMO_ADMIN_USER_ID
         try:
             table_obj = client.table("analysis_history") if hasattr(client, "table") else client.from_("analysis_history")
             query = table_obj.delete().eq("id", analysis_id)

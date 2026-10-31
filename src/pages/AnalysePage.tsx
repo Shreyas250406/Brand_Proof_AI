@@ -220,10 +220,11 @@ export function AnalysePage() {
       await historyService.save(analysis);
       setCurrentAnalysis(analysis);
       navigate('/review');
-    } catch {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An error occurred. Please try again.';
       addToast({
         title: 'Analysis failed',
-        description: 'An error occurred. Please try again.',
+        description: message,
         variant: 'error',
       });
     } finally {

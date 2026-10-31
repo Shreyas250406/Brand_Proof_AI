@@ -245,12 +245,24 @@ export const liveHistoryService: IHistoryService & {
       suggestedCorrection: (f.suggestion as string) || '',
       explanation: (f.explanation as string) || '',
       confidence: f.confidence as number | undefined,
+      sourceOffset:
+        f.start_offset !== undefined && f.end_offset !== undefined
+          ? { start: Number(f.start_offset), end: Number(f.end_offset) }
+          : undefined,
       isDemo: false,
     }));
 
     const createdAt = (item.created_at as string) || new Date().toISOString();
     const orig = (item.original_text as string) || '';
+    const corrected = (item.corrected_text as string) || orig;
     const name = orig.slice(0, 30).trim() || 'Analysis';
+
+    let reviewStatus: 'not_started' | 'in_progress' | 'corrections_applied' | 'completed' = 'not_started';
+    if (orig && corrected && orig !== corrected) {
+      reviewStatus = 'corrections_applied';
+    } else if (findings.length === 0) {
+      reviewStatus = 'completed';
+    }
 
     return {
       id: item.id as string,
@@ -260,8 +272,8 @@ export const liveHistoryService: IHistoryService & {
       status: findings.length === 0 ? 'no_findings' : 'completed',
       findings,
       selectedFindingIds: [],
-      reviewStatus: 'not_started',
-      correctedContent: (item.corrected_text as string) || orig,
+      reviewStatus,
+      correctedContent: corrected,
       isDemo: false,
       createdAt,
       updatedAt: createdAt,
@@ -285,8 +297,39 @@ export const liveHistoryService: IHistoryService & {
   },
 
   async save(analysis: Analysis): Promise<void> {
-    // The backend automatically saves upon /analyze-text and /analyze-image
-    console.info('Analysis saved to live database:', analysis.id);
+    if (!analysis.id) {
+      console.warn('Cannot save analysis without an ID');
+      return;
+    }
+
+    const payload = {
+      corrected_text: analysis.correctedContent,
+      findings: analysis.findings.map(f => ({
+        id: f.id,
+        category: f.category,
+        severity: f.severity,
+        original_text: f.originalExcerpt,
+        suggestion: f.suggestedCorrection,
+        explanation: f.explanation,
+        confidence: f.confidence,
+        start_offset: f.sourceOffset?.start,
+        end_offset: f.sourceOffset?.end,
+      })),
+    };
+
+    try {
+      const res = await fetch(`${API_BASE}/history/${analysis.id}`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.warn('Failed to update analysis history in database:', err);
+      }
+    } catch (err) {
+      console.warn('Network error saving analysis history:', err);
+    }
   },
 
   async delete(id: string): Promise<void> {
@@ -301,6 +344,11 @@ export const liveHistoryService: IHistoryService & {
   },
 
   async clear(): Promise<void> {
-    // Handled per item
+    try {
+      const items = await this.list();
+      await Promise.all(items.map(item => this.delete(item.id)));
+    } catch (err) {
+      console.warn('Failed to clear live history:', err);
+    }
   },
 };
