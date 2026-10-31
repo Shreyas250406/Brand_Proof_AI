@@ -437,8 +437,176 @@ def apply_accepted_suggestions(
     original_content: str,
     suggestions: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Applies only accepted suggestions to the original content safely."""
-    raise NotImplementedError("apply_accepted_suggestions not yet implemented.")
+    """Applies only accepted suggestions to the original content safely.
+
+    Requirements:
+    - Apply only accepted suggestions.
+    - Rejected suggestions must never be applied.
+    - Pending suggestions must never be applied.
+    - Edited suggestions must use their edited text.
+    - Never modify the original content object.
+    - Prevent duplicate application.
+    - Handle overlapping or conflicting suggestions safely.
+    - Report unmatchable or conflicting suggestions in conflicts.
+    """
+    if original_content is None:
+        original_content = ""
+
+    orig_str = str(original_content)
+    applied_suggestions: List[Dict[str, Any]] = []
+    rejected_suggestions: List[Dict[str, Any]] = []
+    pending_suggestions: List[Dict[str, Any]] = []
+    conflicts: List[Dict[str, Any]] = []
+
+    if not isinstance(suggestions, list):
+        return {
+            "original_content": orig_str,
+            "final_content": orig_str,
+            "applied_suggestions": applied_suggestions,
+            "rejected_suggestions": rejected_suggestions,
+            "pending_suggestions": pending_suggestions,
+            "conflicts": conflicts,
+        }
+
+    seen_ids = set()
+    accepted_candidates: List[Dict[str, Any]] = []
+
+    # Segregate suggestions by status
+    for s in suggestions:
+        if not isinstance(s, dict):
+            continue
+        s_id = str(s.get("id", ""))
+        status = s.get("status", "pending")
+
+        if status == "rejected":
+            rejected_suggestions.append(s)
+        elif status == "pending":
+            pending_suggestions.append(s)
+        elif status == "accepted":
+            if s_id in seen_ids:
+                conflicts.append({
+                    "suggestion_id": s_id,
+                    "reason": "Duplicate suggestion ID encountered.",
+                    "suggestion": s,
+                })
+                continue
+            seen_ids.add(s_id)
+            accepted_candidates.append(s)
+        else:
+            # Unknown status treated as pending
+            pending_suggestions.append(s)
+
+    # Resolve positions of accepted suggestions in original content
+    resolved_spans: List[Dict[str, Any]] = []
+    for s in accepted_candidates:
+        orig_text = str(s.get("original_text", ""))
+        if not orig_text:
+            conflicts.append({
+                "suggestion_id": s.get("id"),
+                "reason": "Suggestion has empty original_text.",
+                "suggestion": s,
+            })
+            continue
+
+        # Find all occurrences of orig_text
+        occurrences: List[tuple[int, int]] = []
+        search_start = 0
+        while True:
+            idx = orig_str.find(orig_text, search_start)
+            if idx == -1:
+                break
+            occurrences.append((idx, idx + len(orig_text)))
+            search_start = idx + 1
+
+        if not occurrences:
+            conflicts.append({
+                "suggestion_id": s.get("id"),
+                "reason": "Target original_text does not match any substring in the original content.",
+                "suggestion": s,
+            })
+            continue
+
+        if len(occurrences) > 1:
+            # Check if start_offset disambiguates
+            provided_offset = s.get("start_offset")
+            matched_occ = None
+            if provided_offset is not None:
+                for start_o, end_o in occurrences:
+                    if start_o == provided_offset:
+                        matched_occ = (start_o, end_o)
+                        break
+            if matched_occ:
+                resolved_spans.append({
+                    "start": matched_occ[0],
+                    "end": matched_occ[1],
+                    "suggestion": s,
+                })
+            else:
+                conflicts.append({
+                    "suggestion_id": s.get("id"),
+                    "reason": f"Ambiguous match: text occurs {len(occurrences)} times in content without disambiguating offset.",
+                    "suggestion": s,
+                })
+            continue
+
+        resolved_spans.append({
+            "start": occurrences[0][0],
+            "end": occurrences[0][1],
+            "suggestion": s,
+        })
+
+    # Sort spans by starting index ascending
+    resolved_spans.sort(key=lambda item: item["start"])
+
+    # Detect overlaps and select safe, non-conflicting spans
+    valid_spans: List[Dict[str, Any]] = []
+    for candidate in resolved_spans:
+        c_start = candidate["start"]
+        c_end = candidate["end"]
+        c_sugg = candidate["suggestion"]
+
+        overlap_found = False
+        for prev in valid_spans:
+            p_start = prev["start"]
+            p_end = prev["end"]
+            # Overlap occurs if candidate starts before previous ends
+            if c_start < p_end and c_end > p_start:
+                overlap_found = True
+                conflicts.append({
+                    "suggestion_id": c_sugg.get("id"),
+                    "reason": f"Overlaps with another accepted suggestion ('{prev['suggestion'].get('id')}').",
+                    "suggestion": c_sugg,
+                })
+                break
+
+        if not overlap_found:
+            valid_spans.append(candidate)
+
+    # Apply valid non-overlapping replacements
+    slices: List[str] = []
+    cursor = 0
+    for span in valid_spans:
+        s_start = span["start"]
+        s_end = span["end"]
+        sugg = span["suggestion"]
+        replacement_text = str(sugg.get("suggested_text", ""))
+
+        slices.append(orig_str[cursor:s_start])
+        slices.append(replacement_text)
+        cursor = s_end
+        applied_suggestions.append(sugg)
+
+    slices.append(orig_str[cursor:])
+    final_content = "".join(slices)
+
+    return {
+        "original_content": orig_str,
+        "final_content": final_content,
+        "applied_suggestions": applied_suggestions,
+        "rejected_suggestions": rejected_suggestions,
+        "pending_suggestions": pending_suggestions,
+        "conflicts": conflicts,
+    }
 
 
 def regenerate_improvements(
