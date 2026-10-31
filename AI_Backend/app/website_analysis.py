@@ -13,8 +13,16 @@ import socket
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse, urlunparse
+import urllib.robotparser
+
+import requests
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_USER_AGENT = "BrandProofAI-Bot/1.0 (+https://brandproof.ai)"
+MAX_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MB
+DEFAULT_TIMEOUT_SECONDS = 10.0
+MAX_REDIRECTS = 5
 
 # Blocked hostnames associated with local/internal environments or cloud metadata
 BLOCKED_HOSTNAMES = {
@@ -148,3 +156,155 @@ def validate_url(url: str, check_dns: bool = True) -> Tuple[bool, str]:
         "",
     ))
     return True, normalized
+
+
+def is_robots_allowed(
+    url: str,
+    user_agent: str = DEFAULT_USER_AGENT,
+    timeout: float = 3.0,
+    check_dns: bool = True,
+    session: Optional[requests.Session] = None,
+) -> bool:
+    """Checks robots.txt for the given URL to verify access permissions."""
+    try:
+        parsed = urlparse(url)
+        robots_url = urlunparse((parsed.scheme, parsed.netloc, "/robots.txt", "", "", ""))
+        valid, _ = validate_url(robots_url, check_dns=check_dns)
+        if not valid:
+            return False
+
+        http = session or requests.Session()
+        resp = http.get(
+            robots_url,
+            headers={"User-Agent": user_agent},
+            timeout=timeout,
+            allow_redirects=False,
+        )
+        if resp.status_code == 200 and resp.text:
+            rp = urllib.robotparser.RobotFileParser()
+            rp.parse(resp.text.splitlines())
+            return rp.can_fetch(user_agent, url)
+        # If 404 or other non-200, assume allowed
+        return True
+    except Exception:
+        # On error reading robots.txt, default to allowed for public sites
+        return True
+
+
+def fetch_website(
+    url: str,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    max_redirects: int = MAX_REDIRECTS,
+    max_bytes: int = MAX_RESPONSE_BYTES,
+    check_dns: bool = True,
+    check_robots: bool = False,
+    session: Optional[requests.Session] = None,
+) -> Tuple[bool, str, str]:
+    """Fetches public HTML content from a website with SSRF protection and redirect safety.
+
+    Args:
+        url: Target web page URL.
+        timeout: Network timeout in seconds.
+        max_redirects: Maximum allowable redirect hops.
+        max_bytes: Maximum allowed HTML size in bytes.
+        check_dns: Whether to perform DNS resolution checks for SSRF.
+        check_robots: Whether to check robots.txt policy prior to fetching.
+        session: Optional pre-configured requests.Session (useful for mocking/testing).
+
+    Returns:
+        (success: bool, html_or_error: str, final_url: str)
+    """
+    valid, norm_url = validate_url(url, check_dns=check_dns)
+    if not valid:
+        return False, norm_url, url
+
+    current_url = norm_url
+    http = session or requests.Session()
+    headers = {
+        "User-Agent": DEFAULT_USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    if check_robots and not is_robots_allowed(
+        current_url,
+        user_agent=DEFAULT_USER_AGENT,
+        timeout=min(timeout, 3.0),
+        check_dns=check_dns,
+        session=http,
+    ):
+        return False, "Access disallowed by website robots.txt policy.", current_url
+
+    redirect_count = 0
+    while redirect_count <= max_redirects:
+        try:
+            resp = http.get(
+                current_url,
+                headers=headers,
+                timeout=timeout,
+                allow_redirects=False,
+                stream=True,
+            )
+        except requests.exceptions.Timeout:
+            return False, f"Request to '{current_url}' timed out after {timeout}s.", current_url
+        except requests.exceptions.SSLError:
+            return False, f"SSL verification failed for '{current_url}'.", current_url
+        except requests.exceptions.ConnectionError:
+            return False, f"Failed to connect to website at '{current_url}'.", current_url
+        except Exception as exc:
+            return False, f"Request failed: {str(exc)}", current_url
+
+        # Check for redirects
+        if resp.status_code in (301, 302, 303, 307, 308):
+            redirect_count += 1
+            if redirect_count > max_redirects:
+                return False, f"Exceeded maximum redirects limit of {max_redirects}.", current_url
+
+            loc = resp.headers.get("Location")
+            if not loc:
+                return False, f"HTTP {resp.status_code} redirect without Location header.", current_url
+
+            next_url = urljoin(current_url, loc)
+            valid_next, norm_next = validate_url(next_url, check_dns=check_dns)
+            if not valid_next:
+                return False, f"Redirect to unsafe destination blocked: {norm_next}", next_url
+
+            current_url = norm_next
+            continue
+
+        # Non-redirect status codes
+        if resp.status_code != 200:
+            return False, f"HTTP error {resp.status_code} occurred while loading page.", current_url
+
+        # Read content safely with size limit
+        content_type = resp.headers.get("Content-Type", "").lower()
+        if content_type and "html" not in content_type and "text" not in content_type:
+            return False, f"Unsupported Content-Type '{content_type}'. Expected HTML/text.", current_url
+
+        chunks = []
+        downloaded = 0
+        try:
+            for chunk in resp.iter_content(chunk_size=16384):
+                if chunk:
+                    chunks.append(chunk)
+                    downloaded += len(chunk)
+                    if downloaded > max_bytes:
+                        return (
+                            False,
+                            f"Downloaded content exceeded limit of {max_bytes} bytes.",
+                            current_url,
+                        )
+        except Exception as exc:
+            return False, f"Error reading response body: {str(exc)}", current_url
+
+        raw_bytes = b"".join(chunks)
+        # Decode HTML
+        encoding = resp.encoding or "utf-8"
+        try:
+            html_text = raw_bytes.decode(encoding, errors="replace")
+        except Exception:
+            html_text = raw_bytes.decode("utf-8", errors="replace")
+
+        return True, html_text, current_url
+
+    return False, f"Exceeded maximum redirects limit of {max_redirects}.", current_url
