@@ -81,7 +81,7 @@ async def get_current_user_optional(authorization: Optional[str] = Header(None))
     
     Returns None for guest/unauthenticated requests without raising an error.
     """
-    if not authorization or not authorization.strip():
+    if not isinstance(authorization, str) or not authorization.strip():
         return None
 
     parts = authorization.strip().split()
@@ -613,6 +613,82 @@ async def analyze_image(
 # History Endpoints
 # ------------------------------------------------------------------------------
 
+def _convert_media_row_to_history_item(mrow: Dict[str, Any]) -> AnalysisHistoryItem:
+    """Converts a public.media_analysis row to a unified AnalysisHistoryItem."""
+    mid = mrow["id"]
+    mtype = mrow.get("media_type") or "audio"
+    mfn = mrow.get("original_filename") or f"{mtype}_analysis"
+    mtrans = mrow.get("transcription") or {}
+    mvis = mrow.get("visual_text") or {}
+    mcomb = mrow.get("combined_analysis") or {}
+    msum = mrow.get("summary") or {}
+
+    mfindings = []
+    for sf in mtrans.get("findings", []):
+        mfindings.append({
+            "id": sf.get("id") or f"sp-{len(mfindings) + 1}",
+            "category": sf.get("category", "grammar"),
+            "severity": sf.get("severity", "medium"),
+            "original_text": sf.get("original_excerpt") or sf.get("original_text", ""),
+            "suggestion": sf.get("suggested_correction") or sf.get("suggestion", ""),
+            "explanation": sf.get("explanation", ""),
+            "timestamp": sf.get("timestamp"),
+            "media_type": "speech",
+            "confidence": 0.95,
+        })
+    for vf in mvis.get("findings", []):
+        mfindings.append({
+            "id": f"vis-{len(mfindings) + 1}",
+            "category": vf.get("category", "clarity"),
+            "severity": vf.get("severity", "medium"),
+            "original_text": vf.get("original_text", ""),
+            "suggestion": vf.get("suggested_text") or vf.get("suggestion", ""),
+            "explanation": vf.get("explanation", ""),
+            "timestamp": vf.get("timestamp"),
+            "media_type": "visual",
+            "confidence": 0.90,
+        })
+    for cf in mcomb.get("findings", []):
+        mfindings.append({
+            "id": f"comb-{len(mfindings) + 1}",
+            "category": "consistency",
+            "severity": cf.get("severity", "medium"),
+            "original_text": f"Spoken: '{cf.get('spoken_text') or ''}' vs Visual: '{cf.get('visual_text') or ''}'",
+            "suggestion": "Align spoken and visual messaging for brand clarity",
+            "explanation": cf.get("explanation", ""),
+            "timestamp": "00:00",
+            "media_type": "combined",
+            "confidence": 0.88,
+        })
+
+    orig_text = mtrans.get("original_text")
+    if not orig_text and mvis.get("segments"):
+        orig_text = "\n".join(f"[{s.get('timestamp', '00:00')}] {s.get('text', '')}" for s in mvis["segments"])
+    if not orig_text:
+        orig_text = f"[{mtype.upper()} Audit: {mfn}]"
+
+    corr_text = mtrans.get("corrected_text") or orig_text
+
+    total_iss = msum.get("total_issues") if isinstance(msum, dict) else len(mfindings)
+    if total_iss is None:
+        total_iss = len(mfindings)
+    dur = round(float(mrow.get("duration_seconds") or 0), 1)
+    summary_text = f"{mtype.title()} analysis: {total_iss} issues identified ({dur}s duration)."
+
+    return AnalysisHistoryItem(
+        id=mid,
+        user_id=mrow.get("user_id"),
+        input_type=mtype,
+        original_text=orig_text,
+        corrected_text=corr_text,
+        findings=mfindings,
+        summary=summary_text,
+        model_name="Gemini 3.5 Flash / Groq Whisper",
+        created_at=str(mrow.get("created_at", "")),
+        image_metadata=None,
+    )
+
+
 @router.get(
     "/history",
     response_model=HistoryListResponse,
@@ -623,7 +699,7 @@ async def list_history(
     offset: int = Query(0, ge=0),
     authorization: Optional[str] = Header(None),
 ) -> HistoryListResponse:
-    """Retrieves analysis history from Supabase analysis_history."""
+    """Retrieves analysis history from Supabase analysis_history and media_analysis."""
     if not supabase_service.is_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -631,7 +707,7 @@ async def list_history(
         )
 
     user = await get_current_user_optional(authorization)
-    user_id = user["user_id"] if user else None
+    user_id = (user.get("user_id") or user.get("id")) if user else None
 
     try:
         records = supabase_service.list_analysis_history(user_id=user_id, limit=limit, offset=offset)
@@ -678,8 +754,19 @@ async def list_history(
                 )
             )
 
+        # Retrieve media analysis records from public.media_analysis
+        try:
+            media_records = supabase_service.list_media_analyses(user_id=user_id, limit=limit, offset=offset)
+            for mrow in media_records:
+                items.append(_convert_media_row_to_history_item(mrow))
+        except Exception as mexc:
+            logger.warning("Could not list media analyses: %s", mexc)
+
+        # Sort merged history chronologically descending
+        items.sort(key=lambda x: str(x.created_at or ""), reverse=True)
+
         return HistoryListResponse(
-            items=items,
+            items=items[:limit],
             total=len(items),
             limit=limit,
             offset=offset,
@@ -709,10 +796,13 @@ async def get_history_item(
         )
 
     user = await get_current_user_optional(authorization)
-    user_id = user["user_id"] if user else None
+    user_id = (user.get("user_id") or user.get("id")) if user else None
 
     row = supabase_service.get_analysis_by_id(analysis_id=id, user_id=user_id)
     if not row:
+        mrow = supabase_service.get_media_analysis(analysis_id=id, user_id=user_id)
+        if mrow:
+            return _convert_media_row_to_history_item(mrow)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error_type": "NotFoundError", "message": f"Analysis with ID '{id}' was not found."},
@@ -771,7 +861,7 @@ async def update_history_item(
     request: UpdateHistoryRequest,
     authorization: Optional[str] = Header(None),
 ) -> AnalysisHistoryItem:
-    """Updates an existing analysis entry in Supabase analysis_history."""
+    """Updates an existing analysis entry in Supabase analysis_history or media_analysis."""
     if not supabase_service.is_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -779,16 +869,38 @@ async def update_history_item(
         )
 
     user = await get_current_user_optional(authorization)
-    user_id = user["user_id"] if user else None
+    user_id = (user.get("user_id") or user.get("id")) if user else None
 
     try:
-        updated = supabase_service.update_analysis_history(
-            analysis_id=id,
-            corrected_text=request.corrected_text,
-            findings=request.findings,
-            summary=request.summary,
-            user_id=user_id,
-        )
+        updated = None
+        try:
+            updated = supabase_service.update_analysis_history(
+                analysis_id=id,
+                corrected_text=request.corrected_text,
+                findings=request.findings,
+                summary=request.summary,
+                user_id=user_id,
+            )
+        except Exception:
+            pass
+
+        if not updated:
+            m_updated = supabase_service.update_media_analysis(
+                analysis_id=id,
+                corrected_text=request.corrected_text,
+                findings=request.findings,
+                summary=request.summary,
+                user_id=user_id,
+            )
+            if m_updated:
+                return _convert_media_row_to_history_item(m_updated)
+
+        if not updated:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error_type": "NotFoundError", "message": f"Analysis with ID '{id}' was not found."},
+            )
+
         return AnalysisHistoryItem(
             id=updated["id"],
             user_id=updated.get("user_id"),
@@ -800,6 +912,8 @@ async def update_history_item(
             model_name=updated.get("model_name"),
             created_at=str(updated.get("created_at", "")),
         )
+    except HTTPException:
+        raise
     except DatabaseError as exc:
         status_code = (
             status.HTTP_404_NOT_FOUND
@@ -833,7 +947,7 @@ async def delete_history_item(
         )
 
     user = await get_current_user_optional(authorization)
-    user_id = user["user_id"] if user else None
+    user_id = (user.get("user_id") or user.get("id")) if user else None
 
     # Retrieve image metadata first to optionally clean up S3 object
     meta_row = supabase_service.get_image_metadata_by_analysis(id)
@@ -844,6 +958,8 @@ async def delete_history_item(
             logger.warning("Could not delete S3 object %s during history deletion: %s", meta_row.get("object_key"), exc)
 
     deleted = supabase_service.delete_analysis(analysis_id=id, user_id=user_id)
+    if not deleted:
+        deleted = supabase_service.delete_media_analysis(analysis_id=id, user_id=user_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -991,7 +1107,7 @@ async def analyze_media_endpoint(
 ):
     """Analyzes multimedia file (MP3/MP4) for speech, visual text, and consistency."""
     user = await get_current_user_optional(authorization)
-    user_id = user.get("id") if user else None
+    user_id = (user.get("user_id") or user.get("id")) if user else None
 
     fn = file.filename or "media_upload"
     ext = fn.split(".")[-1].lower() if "." in fn else ""

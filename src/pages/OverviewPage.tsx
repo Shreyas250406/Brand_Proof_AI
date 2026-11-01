@@ -13,6 +13,10 @@ import {
   ArrowRight,
   FileText,
   ChevronRight,
+  Video,
+  Volume2,
+  Image as ImageIcon,
+  Globe,
 } from 'lucide-react';
 import type { Analysis } from '@/types/domain';
 import { historyService } from '@/services/demo';
@@ -295,7 +299,17 @@ function AnalysisListItem({
       className="card w-full text-left p-4 flex items-center gap-4 hover:shadow-[var(--shadow-elevated)] transition-shadow group"
     >
       <div className="w-8 h-8 rounded-lg bg-surface-100 flex items-center justify-center shrink-0">
-        <FileText className="w-4 h-4 text-surface-500" />
+        {analysis.sourceType === 'file_video' ? (
+          <Video className="w-4 h-4 text-purple-600" />
+        ) : analysis.sourceType === 'file_audio' ? (
+          <Volume2 className="w-4 h-4 text-brand-600" />
+        ) : analysis.sourceType === 'file_image' ? (
+          <ImageIcon className="w-4 h-4 text-amber-600" />
+        ) : analysis.sourceType === 'url' ? (
+          <Globe className="w-4 h-4 text-emerald-600" />
+        ) : (
+          <FileText className="w-4 h-4 text-surface-500" />
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-surface-900 truncate group-hover:text-brand-600 transition-colors">

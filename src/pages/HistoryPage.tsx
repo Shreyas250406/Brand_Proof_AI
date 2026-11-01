@@ -13,6 +13,10 @@ import {
   ChevronRight,
   History,
   Download,
+  Video,
+  Volume2,
+  Image as ImageIcon,
+  Globe,
 } from 'lucide-react';
 import type { Analysis, AnalysisStatus, ReviewStatus } from '@/types/domain';
 import { historyService } from '@/services/demo';
@@ -340,7 +344,17 @@ function HistoryRow({ analysis, onClick, onDelete, onDownload }: HistoryRowProps
     <div className="card p-4 flex items-center gap-4 group hover:shadow-[var(--shadow-elevated)] transition-shadow">
       {/* Icon */}
       <div className="w-9 h-9 rounded-lg bg-surface-100 flex items-center justify-center shrink-0">
-        <FileText className="w-4 h-4 text-surface-500" />
+        {analysis.sourceType === 'file_video' ? (
+          <Video className="w-4 h-4 text-purple-600" />
+        ) : analysis.sourceType === 'file_audio' ? (
+          <Volume2 className="w-4 h-4 text-brand-600" />
+        ) : analysis.sourceType === 'file_image' ? (
+          <ImageIcon className="w-4 h-4 text-amber-600" />
+        ) : analysis.sourceType === 'url' ? (
+          <Globe className="w-4 h-4 text-emerald-600" />
+        ) : (
+          <FileText className="w-4 h-4 text-surface-500" />
+        )}
       </div>
 
       {/* Info */}

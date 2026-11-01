@@ -218,10 +218,23 @@ export function AnalysePage() {
 
   const handleMediaDragLeave = useCallback(() => setIsMediaDragOver(false), []);
 
-  function loadSampleMedia(type: 'audio' | 'video') {
+  async function loadSampleMedia(type: 'audio' | 'video') {
     const isVid = type === 'video';
-    const fakeContent = new Blob([new Uint8Array([0x00, 0x01, 0x02, 0x03])], { type: isVid ? 'video/mp4' : 'audio/mpeg' });
-    const sampleFile = new File([fakeContent], isVid ? 'brand_product_launch.mp4' : 'keynote_speech.mp3', {
+    const filename = isVid ? 'sample_video.mp4' : 'sample_speech.mp3';
+    try {
+      const res = await fetch(`/samples/${filename}`);
+      if (res.ok) {
+        const blob = await res.blob();
+        const sampleFile = new File([blob], filename, {
+          type: isVid ? 'video/mp4' : 'audio/mpeg',
+        });
+        handleMediaFile(sampleFile);
+        return;
+      }
+    } catch {
+      // fallback if fetch fails
+    }
+    const sampleFile = new File([new Uint8Array([0x00])], filename, {
       type: isVid ? 'video/mp4' : 'audio/mpeg',
     });
     handleMediaFile(sampleFile);

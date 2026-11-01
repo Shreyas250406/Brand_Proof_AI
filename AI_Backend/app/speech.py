@@ -243,6 +243,134 @@ def find_visual_timestamp(excerpt: str, segments: List[Dict[str, str]]) -> str:
     return segments[0].get("timestamp", "00:00")
 
 
+def normalize_groq_language(lang: Optional[str]) -> Optional[str]:
+    """Maps user-facing language strings to ISO-639-1 code required by Groq Whisper.
+
+    Groq/OpenAI Whisper strictly rejects names like 'English (UK)' or 'Spanish' with HTTP 400.
+    """
+    if not lang:
+        return None
+    l = lang.strip().lower()
+    if "en" in l or "english" in l:
+        return "en"
+    if "es" in l or "spanish" in l:
+        return "es"
+    if "fr" in l or "french" in l:
+        return "fr"
+    if "de" in l or "german" in l:
+        return "de"
+    if "it" in l or "italian" in l:
+        return "it"
+    if "pt" in l or "portuguese" in l:
+        return "pt"
+    if "zh" in l or "chinese" in l:
+        return "zh"
+    if "ja" in l or "japanese" in l:
+        return "ja"
+    if "nl" in l or "dutch" in l:
+        return "nl"
+    if "ru" in l or "russian" in l:
+        return "ru"
+    if "hi" in l or "hindi" in l:
+        return "hi"
+    if "ar" in l or "arabic" in l:
+        return "ar"
+    if len(l) == 2:
+        return l
+    return None
+
+
+def transcribe_audio_with_gemini(audio_path: str, language: Optional[str] = None) -> Dict[str, Any]:
+    """Fallback speech-to-text using Google Gemini multimodal audio transcription."""
+    import base64
+    import httpx
+    import json
+    from app.services.ai_provider import GEMINI_BASE_URL
+
+    if not ai_provider_service.is_configured():
+        raise SpeechToTextError("Gemini API key is not configured for fallback transcription.")
+
+    try:
+        info = get_media_info(audio_path)
+        duration = float(info.get("duration", 0.0) or 0.0)
+
+        with open(audio_path, "rb") as af:
+            audio_bytes = af.read()
+
+        b64_data = base64.b64encode(audio_bytes).decode("utf-8")
+        ext = os.path.splitext(audio_path)[1].lower()
+        mime_type = "audio/wav" if ext == ".wav" else "audio/mp3"
+
+        prompt = (
+            f"Transcribe this spoken audio verbatim in {language or 'English'}. "
+            "Return a strictly valid JSON object with: "
+            "transcript (full verbatim transcript string), "
+            "language (detected language string, e.g. en), "
+            "and segments (list of objects with timestamp in MM:SS format, start in seconds, end in seconds, text)."
+        )
+
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"inline_data": {"mime_type": mime_type, "data": b64_data}},
+                    {"text": prompt}
+                ]
+            }],
+            "generationConfig": {
+                "response_mime_type": "application/json",
+                "temperature": 0.1,
+            }
+        }
+
+        url = f"{GEMINI_BASE_URL}/{ai_provider_service.model}:generateContent"
+        params = {"key": ai_provider_service.api_key}
+
+        with httpx.Client(timeout=45.0) as client:
+            resp = client.post(url, params=params, json=payload)
+
+        if resp.status_code != 200:
+            raise SpeechToTextError(f"Gemini transcription failed with HTTP {resp.status_code}: {resp.text[:200]}")
+
+        res_json = resp.json()
+        candidates = res_json.get("candidates", [])
+        if not candidates:
+            return {"transcript": "", "language": "en", "duration": duration, "segments": []}
+
+        content_parts = candidates[0].get("content", {}).get("parts", [])
+        if not content_parts:
+            return {"transcript": "", "language": "en", "duration": duration, "segments": []}
+
+        raw_text = content_parts[0].get("text", "")
+        data = json.loads(raw_text)
+        if isinstance(data, list) and len(data) > 0:
+            data = data[0]
+
+        transcript = str(data.get("transcript", "") or "").strip()
+        detected_lang = str(data.get("language", "en") or "en")
+        segments = data.get("segments", []) or []
+
+        parsed_segs = []
+        for s in segments:
+            if isinstance(s, dict):
+                parsed_segs.append({
+                    "timestamp": str(s.get("timestamp", "00:00")),
+                    "start": float(s.get("start", 0.0) or 0.0),
+                    "end": float(s.get("end", 0.0) or 0.0),
+                    "text": str(s.get("text", "") or "").strip(),
+                })
+
+        logger.info("Successfully transcribed audio via Gemini fallback (%d chars).", len(transcript))
+        return {
+            "transcript": transcript,
+            "language": detected_lang,
+            "duration": duration,
+            "segments": parsed_segs,
+        }
+    except Exception as exc:
+        logger.error("Gemini fallback transcription error: %s", exc)
+        raise SpeechToTextError(f"Audio transcription failed: {str(exc)}")
+
+
 def transcribe_audio_chunks(
     audio_path: str,
     chunk_duration_secs: int = 600,
@@ -253,58 +381,64 @@ def transcribe_audio_chunks(
     info = get_media_info(audio_path)
     total_duration = info["duration"]
 
-    client = get_groq_client()
-    model = getattr(settings, "GROQ_MODEL", "whisper-large-v3-turbo")
+    groq_lang = normalize_groq_language(language)
 
-    chunk_transcripts: List[str] = []
-    detected_lang: Optional[str] = None
-
-    temp_dir = tempfile.mkdtemp(prefix="audio_chunks_")
     try:
-        start = 0
-        idx = 0
-        while start < total_duration:
-            chunk_file = os.path.join(temp_dir, f"chunk_{idx:03d}.mp3")
-            split_cmd = [
-                ffmpeg_exe,
-                "-y",
-                "-ss", str(start),
-                "-t", str(chunk_duration_secs),
-                "-i", audio_path,
-                "-acodec", "copy",
-                chunk_file,
-            ]
-            res = subprocess.run(split_cmd, capture_output=True)
-            if res.returncode != 0 or not os.path.exists(chunk_file) or os.path.getsize(chunk_file) == 0:
-                break
+        client = get_groq_client()
+        model = getattr(settings, "GROQ_MODEL", "whisper-large-v3-turbo")
 
-            with open(chunk_file, "rb") as cf:
-                chunk_resp = client.audio.transcriptions.create(
-                    file=(f"chunk_{idx}.mp3", cf.read()),
-                    model=model,
-                    response_format="verbose_json",
-                    language=language,
-                    temperature=0.0,
-                )
+        chunk_transcripts: List[str] = []
+        detected_lang: Optional[str] = None
 
-            chunk_text = getattr(chunk_resp, "text", "") or ""
-            if chunk_text.strip():
-                chunk_transcripts.append(chunk_text.strip())
+        temp_dir = tempfile.mkdtemp(prefix="audio_chunks_")
+        try:
+            start = 0
+            idx = 0
+            while start < total_duration:
+                chunk_file = os.path.join(temp_dir, f"chunk_{idx:03d}.mp3")
+                split_cmd = [
+                    ffmpeg_exe,
+                    "-y",
+                    "-ss", str(start),
+                    "-t", str(chunk_duration_secs),
+                    "-i", audio_path,
+                    "-acodec", "copy",
+                    chunk_file,
+                ]
+                res = subprocess.run(split_cmd, capture_output=True)
+                if res.returncode != 0 or not os.path.exists(chunk_file) or os.path.getsize(chunk_file) == 0:
+                    break
 
-            if not detected_lang and hasattr(chunk_resp, "language"):
-                detected_lang = chunk_resp.language
+                with open(chunk_file, "rb") as cf:
+                    chunk_resp = client.audio.transcriptions.create(
+                        file=(f"chunk_{idx}.mp3", cf.read()),
+                        model=model,
+                        response_format="verbose_json",
+                        language=groq_lang,
+                        temperature=0.0,
+                    )
 
-            start += chunk_duration_secs
-            idx += 1
+                chunk_text = getattr(chunk_resp, "text", "") or ""
+                if chunk_text.strip():
+                    chunk_transcripts.append(chunk_text.strip())
 
-        full_transcript = " ".join(chunk_transcripts).strip()
-        return {
-            "transcript": full_transcript,
-            "language": detected_lang or language or "en",
-            "duration": total_duration,
-        }
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+                if not detected_lang and hasattr(chunk_resp, "language"):
+                    detected_lang = chunk_resp.language
+
+                start += chunk_duration_secs
+                idx += 1
+
+            full_transcript = " ".join(chunk_transcripts).strip()
+            return {
+                "transcript": full_transcript,
+                "language": detected_lang or groq_lang or "en",
+                "duration": total_duration,
+            }
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+    except Exception as exc:
+        logger.warning("Groq chunk transcription failed (%s). Falling back to Gemini audio STT.", exc)
+        return transcribe_audio_with_gemini(audio_path, language=language)
 
 
 def transcribe_audio(audio_path: str, language: Optional[str] = None) -> Dict[str, Any]:
@@ -312,6 +446,7 @@ def transcribe_audio(audio_path: str, language: Optional[str] = None) -> Dict[st
 
     Preserves original speech transcript separately from any AI-corrected versions.
     Handles large files by splitting into chronological chunks if size exceeds 24MB.
+    Gracefully falls back to Google Gemini audio transcription if Groq is unavailable.
     """
     if not os.path.exists(audio_path):
         raise InvalidMediaError(f"Audio file not found for transcription: {audio_path}")
@@ -325,6 +460,8 @@ def transcribe_audio(audio_path: str, language: Optional[str] = None) -> Dict[st
         logger.info("Audio size (%d bytes) exceeds 24MB. Splitting into chronological chunks.", size_bytes)
         return transcribe_audio_chunks(audio_path, language=language)
 
+    groq_lang = normalize_groq_language(language)
+
     client = get_groq_client()
     model = getattr(settings, "GROQ_MODEL", "whisper-large-v3-turbo")
 
@@ -336,12 +473,12 @@ def transcribe_audio(audio_path: str, language: Optional[str] = None) -> Dict[st
             file=(os.path.basename(audio_path), file_bytes),
             model=model,
             response_format="verbose_json",
-            language=language,
+            language=groq_lang,
             temperature=0.0,
         )
 
         full_text = getattr(transcription, "text", "") or ""
-        detected_lang = getattr(transcription, "language", None) or language or "en"
+        detected_lang = getattr(transcription, "language", None) or groq_lang or "en"
         duration = getattr(transcription, "duration", 0.0) or 0.0
 
         raw_segs = getattr(transcription, "segments", []) or []
@@ -368,12 +505,17 @@ def transcribe_audio(audio_path: str, language: Optional[str] = None) -> Dict[st
 
     except Exception as exc:
         err_str = str(exc)
-        logger.error("Groq Whisper STT API error: %s", err_str)
         if "401" in err_str or "unauthorized" in err_str.lower():
             raise SpeechToTextError(f"Groq API authentication failed: {err_str}")
         if "429" in err_str or "rate limit" in err_str.lower():
             raise SpeechToTextError(f"Groq API rate limit exceeded: {err_str}")
-        raise SpeechToTextError(f"Groq transcription failed: {err_str}")
+
+        logger.warning("Groq Whisper STT error (%s). Falling back to Gemini audio transcription.", err_str)
+        try:
+            return transcribe_audio_with_gemini(audio_path, language=language)
+        except Exception as gemini_exc:
+            logger.error("Both Groq and Gemini audio transcription failed: %s", gemini_exc)
+            raise SpeechToTextError(f"Transcription failed: {err_str}")
 
 
 # ------------------------------------------------------------------------------

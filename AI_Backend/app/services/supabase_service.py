@@ -746,6 +746,50 @@ class SupabaseService:
             logger.error("Failed to delete media analysis %s: %s", analysis_id, exc)
             raise DatabaseError(f"Could not delete media analysis: {str(exc)}")
 
+    def update_media_analysis(
+        self,
+        analysis_id: str,
+        corrected_text: Optional[str] = None,
+        findings: Optional[List[Dict[str, Any]]] = None,
+        summary: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Updates an existing media analysis record (transcription corrected_text / findings)."""
+        client = self._get_client()
+        if user_id == LEGACY_DEMO_ADMIN_ID:
+            user_id = DEMO_ADMIN_USER_ID
+        try:
+            table_obj = client.table("media_analysis") if hasattr(client, "table") else client.from_("media_analysis")
+            existing_query = table_obj.select("*").eq("id", analysis_id)
+            if user_id:
+                existing_query = existing_query.eq("user_id", user_id)
+            res = existing_query.execute()
+            if not res.data or len(res.data) == 0:
+                return None
+
+            existing = res.data[0]
+            transcription = existing.get("transcription") or {}
+            if corrected_text is not None:
+                transcription["corrected_text"] = corrected_text
+            if findings is not None:
+                transcription["findings"] = findings
+
+            update_payload: Dict[str, Any] = {"transcription": transcription}
+            if summary is not None:
+                sum_obj = existing.get("summary") or {}
+                if isinstance(sum_obj, dict):
+                    sum_obj["assessment"] = summary
+                update_payload["summary"] = sum_obj
+
+            update_query = table_obj.update(update_payload).eq("id", analysis_id)
+            if user_id:
+                update_query = update_query.eq("user_id", user_id)
+            up_res = update_query.execute()
+            return up_res.data[0] if up_res.data else None
+        except Exception as exc:
+            logger.error("Failed to update media analysis %s: %s", analysis_id, exc)
+            raise DatabaseError(f"Could not update media analysis: {str(exc)}")
+
 
 # Default singleton instance
 supabase_service = SupabaseService()

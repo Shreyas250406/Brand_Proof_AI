@@ -341,7 +341,29 @@ export const liveHistoryService: IHistoryService & {
     const createdAt = (item.created_at as string) || new Date().toISOString();
     const orig = (item.original_text as string) || '';
     const corrected = (item.corrected_text as string) || orig;
-    const name = orig.slice(0, 30).trim() || 'Analysis';
+    const inputType = ((item.input_type as string) || 'text').toLowerCase();
+
+    let sourceType: Analysis['sourceType'] = 'text';
+    if (inputType === 'image' || inputType === 'file_image') {
+      sourceType = 'file_image';
+    } else if (inputType === 'video' || inputType === 'file_video') {
+      sourceType = 'file_video';
+    } else if (inputType === 'audio' || inputType === 'file_audio' || inputType === 'speech') {
+      sourceType = 'file_audio';
+    } else if (inputType === 'url') {
+      sourceType = 'url';
+    }
+
+    let name = orig.slice(0, 30).trim() || 'Analysis';
+    if (sourceType === 'file_video' || sourceType === 'file_audio') {
+      const match = orig.match(/\[(VIDEO|AUDIO)\s+(?:Audit:)?\s*([^\]]+)\]/i);
+      if (match && match[2]) {
+        name = match[2].trim();
+      } else {
+        const timeStr = new Date(createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+        name = `${sourceType === 'file_video' ? 'Video' : 'Audio'} Analysis — ${timeStr}`;
+      }
+    }
 
     let reviewStatus: 'not_started' | 'in_progress' | 'corrections_applied' | 'completed' = 'not_started';
     if (orig && corrected && orig !== corrected) {
@@ -353,8 +375,9 @@ export const liveHistoryService: IHistoryService & {
     return {
       id: item.id as string,
       name,
-      sourceType: ((item.input_type as string) === 'image' ? 'file_image' : 'text'),
+      sourceType,
       originalContent: orig,
+      fileName: (item.image_metadata as Record<string, unknown>)?.original_filename as string | undefined || (sourceType === 'file_video' || sourceType === 'file_audio' ? name : undefined),
       status: findings.length === 0 ? 'no_findings' : 'completed',
       findings,
       selectedFindingIds: [],
