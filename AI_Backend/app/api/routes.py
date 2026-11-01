@@ -1205,6 +1205,13 @@ async def health_check() -> HealthResponse:
             bucket=settings.S3_BUCKET_NAME if s3_configured else None,
             provider="s3",
         ),
+        claim_verification={
+            "enabled": True,
+            "provider": "gemini",
+            "model": settings.effective_model,
+            "status": "ready" if ai_configured else "unconfigured",
+            "persistence": "supabase" if db_configured else "in_memory",
+        },
     )
 
 

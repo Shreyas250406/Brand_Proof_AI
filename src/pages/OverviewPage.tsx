@@ -13,6 +13,7 @@ import {
   ArrowRight,
   FileText,
   ChevronRight,
+  ShieldCheck,
   Video,
   Volume2,
   Image as ImageIcon,
@@ -63,13 +64,22 @@ export function OverviewPage() {
           <h2 className="page-title">Welcome back</h2>
           <p className="page-description">Your content quality overview at a glance.</p>
         </div>
-        <button
-          onClick={() => navigate('/analyse')}
-          className="btn-primary shrink-0"
-        >
-          <FileScan className="w-4 h-4" />
-          Analyse Content
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => navigate('/claim-verification')}
+            className="btn-secondary shrink-0"
+          >
+            <ShieldCheck className="w-4 h-4 text-brand-600" />
+            Verify Claim
+          </button>
+          <button
+            onClick={() => navigate('/analyse')}
+            className="btn-primary shrink-0"
+          >
+            <FileScan className="w-4 h-4" />
+            Analyse Content
+          </button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -235,6 +245,23 @@ export function OverviewPage() {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-surface-800">Set Up Brand Guidelines</p>
               <p className="text-xs text-surface-500 mt-0.5">Define your preferred terminology, tone and writing rules.</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-surface-400 mt-0.5 shrink-0" />
+          </div>
+
+          {/* Evidence Claim Verification card */}
+          <div className="card p-4 flex items-start gap-3 cursor-pointer hover:shadow-[var(--shadow-elevated)] transition-shadow border-brand-200/70 hover:border-brand-300"
+            onClick={() => navigate('/claim-verification')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => e.key === 'Enter' && navigate('/claim-verification')}
+          >
+            <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center shrink-0">
+              <ShieldCheck className="w-4 h-4 text-brand-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-surface-800">Verify Claims Against Evidence</p>
+              <p className="text-xs text-surface-500 mt-0.5">Strictly prove or disprove marketing statements using citations & Gemini AI.</p>
             </div>
             <ChevronRight className="w-4 h-4 text-surface-400 mt-0.5 shrink-0" />
           </div>

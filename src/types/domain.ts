@@ -277,3 +277,9 @@ export interface ApplyUserImprovementsResult {
   }>;
 }
 
+// -----------------------------------------------------------
+// Claim Verification Domain Exports
+// -----------------------------------------------------------
+export * from './claimVerification';
+
+

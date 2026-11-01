@@ -483,6 +483,6 @@ python -m pytest tests/ -v
 - **Language Coverage:** Default OCR and grammar prompt are tuned for English. Additional languages can be enabled via `OCR_LANG` and request `language` parameters.
 - **Extension Hooks:** Service interfaces in `app/services/` are modularly designed to support future additions:
   - Brand compliance checking
-  - Evidence-backed claim verification (Brand Truth Graph)
+  - Evidence-backed claim verification (Brand Truth Graph) [Implemented via /api/v1/ai/verify-claim & Supabase RLS]
   - Risk scoring and adaptive human review
   - Cross-content consistency checks

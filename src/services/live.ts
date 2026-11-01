@@ -589,4 +589,8 @@ export const liveWebsiteService = {
   },
 };
 
+// Re-export claim verification service for centralized API access
+export { claimVerificationService } from './claimVerification';
+
+
 

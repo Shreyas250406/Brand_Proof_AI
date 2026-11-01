@@ -2,6 +2,18 @@
 
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, field_validator
+from app.schemas.claim_verification import (
+    VerificationStatus,
+    EvidenceRelationship,
+    EvidenceRelevance,
+    EvidenceItem,
+    VerifyClaimRequest,
+    EvidenceAnalysisItem,
+    ClaimVerificationResult,
+    VerifyClaimResponse,
+    ClaimVerificationHistoryItem,
+    ClaimVerificationListResponse,
+)
 
 
 class TextAnalysisRequest(BaseModel):
@@ -271,6 +283,7 @@ class HealthResponse(BaseModel):
     ocr_service: OCRServiceHealth
     database: Optional[DatabaseHealth] = None
     storage: Optional[StorageHealth] = None
+    claim_verification: Optional[Dict[str, Any]] = None
 
 
 class ErrorResponse(BaseModel):
