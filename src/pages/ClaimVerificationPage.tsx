@@ -826,6 +826,11 @@ export function ClaimVerificationPage() {
                           <h3 className="text-sm font-bold text-navy-950 leading-snug">
                             {verificationResult.verdict}
                           </h3>
+                          {persistedId && (
+                            <span className="inline-block mt-1 text-[11px] text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded font-mono">
+                              Saved to Supabase: #{persistedId.slice(0, 8)}
+                            </span>
+                          )}
                         </div>
                       </div>
                     );
