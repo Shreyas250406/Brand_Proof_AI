@@ -330,6 +330,7 @@ export function AnalysePage() {
 
   function handleReset() {
     setText('');
+    setWebsiteUrl('');
     setFile(null);
     setFileError(null);
     setFileTextContent(null);
@@ -344,7 +345,14 @@ export function AnalysePage() {
   // Render
   // -----------------------------------------------------------
 
-  const hasContent = activeTab === 'text' ? text.trim().length > 0 : (activeTab === 'media' ? mediaFile !== null : file !== null);
+  const hasContent =
+    activeTab === 'text'
+      ? text.trim().length > 0
+      : activeTab === 'url'
+      ? websiteUrl.trim().length > 0
+      : activeTab === 'media'
+      ? mediaFile !== null
+      : file !== null;
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
@@ -911,7 +919,7 @@ export function AnalysePage() {
           ) : (
             <>
               <FilePlus className="w-4 h-4" />
-              Analyse Content
+              {activeTab === 'url' ? 'Analyse Website' : activeTab === 'media' ? 'Analyse Media' : 'Analyse Content'}
             </>
           )}
         </button>
