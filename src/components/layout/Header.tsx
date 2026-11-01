@@ -17,6 +17,10 @@ const PAGE_METADATA: Record<string, { title: string; description: string }> = {
     title: 'Upload & Analyse',
     description: 'Submit content for brand quality review',
   },
+  '/claim-verification': {
+    title: 'Claim Verification',
+    description: 'Standalone evidence-based factual and marketing claim verification',
+  },
   '/review': {
     title: 'Analysis Review',
     description: 'Review findings, apply corrections and provide feedback',

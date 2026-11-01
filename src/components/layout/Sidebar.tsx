@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
+  ShieldCheck,
   X,
   LogOut,
   LogIn,
@@ -37,6 +38,11 @@ const NAV_ITEMS: NavItem[] = [
     to: '/analyse',
     icon: <FileScan className="w-4.5 h-4.5" />,
     label: 'Upload & Analyse',
+  },
+  {
+    to: '/claim-verification',
+    icon: <ShieldCheck className="w-4.5 h-4.5" />,
+    label: 'Claim Verification',
   },
   {
     to: '/history',

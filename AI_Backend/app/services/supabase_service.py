@@ -790,6 +790,112 @@ class SupabaseService:
             logger.error("Failed to update media analysis %s: %s", analysis_id, exc)
             raise DatabaseError(f"Could not update media analysis: {str(exc)}")
 
+    # --------------------------------------------------------------------------
+    # Claim Verification Persistence Methods
+    # --------------------------------------------------------------------------
+
+    def save_claim_verification(
+        self,
+        claim: str,
+        evidence: List[Dict[str, Any]],
+        verification_status: str,
+        confidence: Optional[float],
+        result: Dict[str, Any],
+        user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Saves a standalone claim verification record to public.claim_verifications."""
+        client = self._get_client()
+
+        if user_id == LEGACY_DEMO_ADMIN_ID:
+            user_id = DEMO_ADMIN_USER_ID
+
+        payload = {
+            "claim": claim,
+            "evidence": evidence,
+            "verification_status": verification_status,
+            "confidence": round(confidence, 2) if confidence is not None else None,
+            "result": result,
+        }
+
+        if user_id:
+            payload["user_id"] = user_id
+
+        try:
+            table_obj = client.table("claim_verifications") if hasattr(client, "table") else client.from_("claim_verifications")
+            response = table_obj.insert(payload).execute()
+            if not response.data or len(response.data) == 0:
+                raise DatabaseError("Failed to insert record into claim_verifications.")
+            return response.data[0]
+        except Exception as exc:
+            logger.error("Database error saving claim verification: %s", exc)
+            raise DatabaseError(f"Could not persist claim verification: {str(exc)}")
+
+    def get_claim_verification(
+        self,
+        verification_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Retrieves a single claim verification record by UUID with user isolation."""
+        client = self._get_client()
+        if user_id == LEGACY_DEMO_ADMIN_ID:
+            user_id = DEMO_ADMIN_USER_ID
+        try:
+            table_obj = client.table("claim_verifications") if hasattr(client, "table") else client.from_("claim_verifications")
+            query = table_obj.select("*").eq("id", verification_id)
+            if user_id:
+                query = query.eq("user_id", user_id)
+            response = query.execute()
+            if response.data and len(response.data) > 0:
+                return response.data[0]
+            return None
+        except Exception as exc:
+            logger.error("Failed to get claim verification %s: %s", verification_id, exc)
+            raise DatabaseError(f"Could not fetch claim verification record: {str(exc)}")
+
+    def list_claim_verifications(
+        self,
+        user_id: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Queries claim verification history ordered chronologically by creation date."""
+        client = self._get_client()
+        try:
+            table_obj = client.table("claim_verifications") if hasattr(client, "table") else client.from_("claim_verifications")
+            query = table_obj.select("*")
+            if user_id:
+                if user_id == LEGACY_DEMO_ADMIN_ID:
+                    user_id = DEMO_ADMIN_USER_ID
+                query = query.eq("user_id", user_id)
+            else:
+                query = query.is_("user_id", "null")
+            query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
+            response = query.execute()
+            return response.data or []
+        except Exception as exc:
+            logger.error("Failed to list claim verifications: %s", exc)
+            raise DatabaseError(f"Could not fetch claim verification history: {str(exc)}")
+
+    def delete_claim_verification(
+        self,
+        verification_id: str,
+        user_id: Optional[str] = None,
+    ) -> bool:
+        """Deletes a claim verification record, ensuring user ownership."""
+        client = self._get_client()
+        if user_id == LEGACY_DEMO_ADMIN_ID:
+            user_id = DEMO_ADMIN_USER_ID
+        try:
+            table_obj = client.table("claim_verifications") if hasattr(client, "table") else client.from_("claim_verifications")
+            query = table_obj.delete().eq("id", verification_id)
+            if user_id:
+                query = query.eq("user_id", user_id)
+            response = query.execute()
+            return bool(response.data and len(response.data) > 0)
+        except Exception as exc:
+            logger.error("Failed to delete claim verification %s: %s", verification_id, exc)
+            raise DatabaseError(f"Could not delete claim verification: {str(exc)}")
+
 
 # Default singleton instance
 supabase_service = SupabaseService()

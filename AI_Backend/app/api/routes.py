@@ -66,10 +66,12 @@ from app.user_improvements import (
     regenerate_improvements,
 )
 from app.website_analysis import analyze_website
+from app.api.v1.endpoints.claim_verification import router as claim_verification_router
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/ai", tags=["AI Engine"])
+router.include_router(claim_verification_router)
 
 
 # ------------------------------------------------------------------------------

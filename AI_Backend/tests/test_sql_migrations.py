@@ -123,7 +123,7 @@ def test_004_disable_rls_statements():
 def test_sqlglot_postgres_parse():
     """Verifies all migration files parse under PostgreSQL dialect."""
     sql_files = sorted(glob.glob(os.path.join(MIGRATIONS_DIR, "*.sql")))
-    assert len(sql_files) == 4
+    assert len(sql_files) >= 4
 
     for fpath in sql_files:
         with open(fpath, "r", encoding="utf-8") as f:

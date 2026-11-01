@@ -11,6 +11,7 @@ import { AnalysePage } from '@/pages/AnalysePage';
 import { ReviewPage } from '@/pages/ReviewPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { BrandPage } from '@/pages/BrandPage';
+import { ClaimVerificationPage } from '@/pages/ClaimVerificationPage';
 import { AuthPage } from '@/pages/AuthPage';
 
 export default function App() {
@@ -24,6 +25,7 @@ export default function App() {
             <Route element={<AppLayout />}>
               <Route path="/" element={<OverviewPage />} />
               <Route path="/analyse" element={<AnalysePage />} />
+              <Route path="/claim-verification" element={<ClaimVerificationPage />} />
               <Route path="/review" element={<ReviewPage />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/brand" element={<BrandPage />} />
